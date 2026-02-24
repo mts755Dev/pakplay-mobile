@@ -1,0 +1,32 @@
+# ===========================================
+# ENVIRONMENT VARIABLES TEMPLATE
+# ===========================================
+# 
+# Copy these values to a .env file in the root directory
+# 
+# IMPORTANT: Never commit .env to git!
+# ===========================================
+
+# Supabase Configuration (REQUIRED)
+# Copy these EXACT values from your Next.js project
+EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url_here
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+
+# ===========================================
+# NEXT.JS → EXPO CONVERSION:
+# ===========================================
+# NEXT_PUBLIC_SUPABASE_URL      → EXPO_PUBLIC_SUPABASE_URL
+# NEXT_PUBLIC_SUPABASE_ANON_KEY → EXPO_PUBLIC_SUPABASE_ANON_KEY
+# NEXT_PUBLIC_TURNSTILE_SITE_KEY → ❌ NOT NEEDED (web-only)
+
+# ===========================================
+# HOW TO SET UP:
+# ===========================================
+# 
+# 1. Create a new file called ".env" in the pakplay-mobile directory
+# 2. Copy the EXPO_PUBLIC variables above
+# 3. Replace the placeholder values with your actual credentials
+# 4. Save the file
+# 5. Restart your development server (npm start)
+# 
+# ===========================================
