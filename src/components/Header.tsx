@@ -15,7 +15,11 @@ import { useAuth } from '../contexts/AuthContext';
 
 const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 
-export default function Header() {
+interface HeaderProps {
+  showBackButton?: boolean;
+}
+
+export default function Header({ showBackButton = false }: HeaderProps) {
   const navigation = useNavigation<any>();
   const { user, userRole, profile } = useAuth();
 
@@ -49,18 +53,37 @@ export default function Header() {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        {/* Logo */}
-        <TouchableOpacity 
-          style={styles.logoContainer}
-          onPress={() => navigation.navigate('MainTabs')}
-        >
-          <Image 
-            source={require('../../assets/icon.png')} 
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-          <Text style={styles.logoText}>PakPlay</Text>
-        </TouchableOpacity>
+        <View style={styles.leftSection}>
+          {/* Back Button */}
+          {showBackButton && (
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
+            </TouchableOpacity>
+          )}
+
+          {/* Logo */}
+          <TouchableOpacity 
+            style={styles.logoContainer}
+            onPress={() => {
+              if (userRole === 'venue_owner') {
+                navigation.navigate('OwnerTabs', { screen: 'Dashboard' });
+              } else {
+                navigation.navigate('MainTabs');
+              }
+            }}
+          >
+            <Image 
+              source={require('../../assets/icon.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+            <Text style={styles.logoText}>PakPlay</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Actions */}
         <View style={styles.actions}>
@@ -127,6 +150,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
+  },
+  leftSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButton: {
+    marginRight: SPACING.sm,
   },
   logoContainer: {
     flexDirection: 'row',

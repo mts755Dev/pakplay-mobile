@@ -74,6 +74,11 @@ const timingConfig = {
 };
 
 export default function CustomAnimatedTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  // Check if the current route wants to hide the tab bar
+  const currentRoute = state.routes[state.index];
+  const { options } = descriptors[currentRoute.key];
+  const isTabBarHidden = options.tabBarStyle?.display === 'none';
+
   const translateX = useSharedValue(0);
 
   const visibleTabs = state.routes.filter(route => tabConfigs[route.name]);
@@ -88,20 +93,28 @@ export default function CustomAnimatedTabBar({ state, descriptors, navigation }:
   const maxX = availableWidth - indicatorWidth - 4; // Small padding from right edge
 
   useEffect(() => {
-    const tabCenterX = (state.index * tabWidth) + (tabWidth / 2);
-    let indicatorX = tabCenterX - (indicatorWidth / 2);
-    
-    // Clamp the indicator position within bounds
-    indicatorX = Math.max(minX, Math.min(indicatorX, maxX));
-    
-    translateX.value = withSpring(indicatorX, springConfig);
-  }, [state.index, visibleTabs.length]);
+    // Only animate if the tab bar is visible and the tab is in visibleTabs
+    const visibleIndex = visibleTabs.findIndex(t => t.name === state.routes[state.index].name);
+    if (visibleIndex !== -1) {
+      const tabCenterX = (visibleIndex * tabWidth) + (tabWidth / 2);
+      let indicatorX = tabCenterX - (indicatorWidth / 2);
+      
+      // Clamp the indicator position within bounds
+      indicatorX = Math.max(minX, Math.min(indicatorX, maxX));
+      
+      translateX.value = withSpring(indicatorX, springConfig);
+    }
+  }, [state.index, visibleTabs.length, isTabBarHidden]);
 
   const animatedIndicatorStyle = useAnimatedStyle(() => {
     return {
       transform: [{ translateX: translateX.value }],
     };
   });
+
+  if (isTabBarHidden) {
+    return null;
+  }
 
   return (
     <View style={styles.container}>
@@ -124,6 +137,9 @@ export default function CustomAnimatedTabBar({ state, descriptors, navigation }:
           if (!config) return null;
 
           const isFocused = state.index === index;
+          
+          // Calculate the visible index for this tab
+          const visibleIndex = visibleTabs.findIndex(t => t.name === route.name);
 
           return (
             <TabButton

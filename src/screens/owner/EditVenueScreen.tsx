@@ -878,6 +878,7 @@ export default function EditVenueScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
@@ -1428,8 +1429,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-    paddingTop: STATUSBAR_HEIGHT + SPACING.sm, // Add status bar height + extra padding
+    paddingHorizontal: SPACING.md,
+    paddingTop: STATUSBAR_HEIGHT + SPACING.sm,
     paddingBottom: SPACING.md,
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,

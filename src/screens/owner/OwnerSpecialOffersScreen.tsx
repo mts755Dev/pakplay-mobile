@@ -117,7 +117,9 @@ export default function OwnerSpecialOffersScreen() {
   };
 
   const onValidFromChange = (_event: any, selectedDate?: Date) => {
-    setShowValidFromPicker(Platform.OS === 'ios');
+    if (Platform.OS === 'android') {
+      setShowValidFromPicker(false);
+    }
     if (selectedDate) {
       setValidFromDate(selectedDate);
       const formattedDate = selectedDate.toISOString().split('T')[0];
@@ -126,7 +128,9 @@ export default function OwnerSpecialOffersScreen() {
   };
 
   const onValidUntilChange = (_event: any, selectedDate?: Date) => {
-    setShowValidUntilPicker(Platform.OS === 'ios');
+    if (Platform.OS === 'android') {
+      setShowValidUntilPicker(false);
+    }
     if (selectedDate) {
       setValidUntilDate(selectedDate);
       const formattedDate = selectedDate.toISOString().split('T')[0];
@@ -580,22 +584,72 @@ export default function OwnerSpecialOffersScreen() {
               
               {/* Date Pickers */}
               {showValidFromPicker && (
-                <DateTimePicker
-                  value={validFromDate}
-                  mode="date"
-                  display="default"
-                  onChange={onValidFromChange}
-                  minimumDate={new Date()}
-                />
+                Platform.OS === 'ios' ? (
+                  <Modal transparent animationType="slide" visible={showValidFromPicker}>
+                    <View style={styles.pickerModalOverlay}>
+                      <View style={styles.pickerModalContent}>
+                        <View style={styles.pickerModalHeader}>
+                          <TouchableOpacity onPress={() => setShowValidFromPicker(false)}>
+                            <Text style={styles.pickerModalDoneText}>Done</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View style={{ backgroundColor: COLORS.surface }}>
+                          <DateTimePicker
+                            value={validFromDate}
+                            mode="date"
+                            display="spinner"
+                            onChange={onValidFromChange}
+                            minimumDate={new Date()}
+                            style={{ width: '100%', height: 200 }}
+                            textColor={COLORS.text}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  </Modal>
+                ) : (
+                  <DateTimePicker
+                    value={validFromDate}
+                    mode="date"
+                    display="default"
+                    onChange={onValidFromChange}
+                    minimumDate={new Date()}
+                  />
+                )
               )}
               {showValidUntilPicker && (
-                <DateTimePicker
-                  value={validUntilDate}
-                  mode="date"
-                  display="default"
-                  onChange={onValidUntilChange}
-                  minimumDate={validFromDate || new Date()}
-                />
+                Platform.OS === 'ios' ? (
+                  <Modal transparent animationType="slide" visible={showValidUntilPicker}>
+                    <View style={styles.pickerModalOverlay}>
+                      <View style={styles.pickerModalContent}>
+                        <View style={styles.pickerModalHeader}>
+                          <TouchableOpacity onPress={() => setShowValidUntilPicker(false)}>
+                            <Text style={styles.pickerModalDoneText}>Done</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View style={{ backgroundColor: COLORS.surface }}>
+                          <DateTimePicker
+                            value={validUntilDate}
+                            mode="date"
+                            display="spinner"
+                            onChange={onValidUntilChange}
+                            minimumDate={validFromDate || new Date()}
+                            style={{ width: '100%', height: 200 }}
+                            textColor={COLORS.text}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  </Modal>
+                ) : (
+                  <DateTimePicker
+                    value={validUntilDate}
+                    mode="date"
+                    display="default"
+                    onChange={onValidUntilChange}
+                    minimumDate={validFromDate || new Date()}
+                  />
+                )
               )}
 
               {/* Active Toggle */}
@@ -1068,5 +1122,32 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.md,
     fontWeight: FONT_WEIGHTS.bold,
     color: COLORS.textInverse,
+  },
+  pickerModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  pickerModalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 0,
+    zIndex: 9999,
+  },
+  pickerModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  pickerModalDoneText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

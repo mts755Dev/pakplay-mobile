@@ -8,6 +8,7 @@ import {
   Platform,
   Image,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation } from '@react-navigation/native';
@@ -21,6 +22,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { getAllProvinces, getCitiesByProvince, getAreasByCity, getSubAreasByArea, normalizeLocationName } from '../../lib/locationHelpers';
 import { supabase } from '../../config/supabase';
 import { showToast } from '../../utils/toast';
+
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 
 export default function AddVenueScreen() {
   const navigation = useNavigation();
@@ -574,6 +577,7 @@ export default function AddVenueScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => step === 1 ? navigation.goBack() : handleBack()} style={styles.backButton}>
@@ -1060,7 +1064,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
+    paddingTop: STATUSBAR_HEIGHT + SPACING.sm,
+    paddingBottom: SPACING.md,
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,

@@ -41,6 +41,7 @@ export default function OwnerTabNavigator() {
         component={OwnerAnalyticsScreen} 
         options={{ 
           tabBarButton: () => null,
+          tabBarStyle: { display: 'none' },
         }}
       />
     </Tab.Navigator>

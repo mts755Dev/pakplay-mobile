@@ -88,10 +88,6 @@ export default function BookingScreen() {
       const formattedDate = selectedDate.toISOString().split('T')[0];
       setBookingDate(formattedDate);
     }
-    
-    if (Platform.OS === 'ios') {
-      setShowDatePicker(false);
-    }
   };
 
   const onStartTimeChange = (event: any, selectedDate?: Date) => {
@@ -104,10 +100,6 @@ export default function BookingScreen() {
       const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
       setStartTime(`${hours}:${minutes}`);
     }
-    
-    if (Platform.OS === 'ios') {
-      setShowStartTimePicker(false);
-    }
   };
 
   const onEndTimeChange = (event: any, selectedDate?: Date) => {
@@ -119,10 +111,6 @@ export default function BookingScreen() {
       const hours = selectedDate.getHours().toString().padStart(2, '0');
       const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
       setEndTime(`${hours}:${minutes}`);
-    }
-    
-    if (Platform.OS === 'ios') {
-      setShowEndTimePicker(false);
     }
   };
 
@@ -440,13 +428,38 @@ export default function BookingScreen() {
               </TouchableOpacity>
             </View>
             {showDatePicker && (
-              <DateTimePicker
-                value={pickerDate}
-                mode="date"
-                display="default"
-                onChange={onDateChange}
-                minimumDate={new Date()}
-              />
+              Platform.OS === 'ios' ? (
+                <Modal transparent animationType="slide" visible={showDatePicker}>
+                  <View style={styles.pickerModalOverlay}>
+                    <View style={styles.pickerModalContent}>
+                      <View style={styles.pickerModalHeader}>
+                        <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                          <Text style={styles.pickerModalDoneText}>Done</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={{ backgroundColor: COLORS.surface }}>
+                        <DateTimePicker
+                          value={pickerDate}
+                          mode="date"
+                          display="spinner"
+                          onChange={onDateChange}
+                          minimumDate={new Date()}
+                          style={{ width: '100%', height: 200 }}
+                          textColor={COLORS.text}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </Modal>
+              ) : (
+                <DateTimePicker
+                  value={pickerDate}
+                  mode="date"
+                  display="default"
+                  onChange={onDateChange}
+                  minimumDate={new Date()}
+                />
+              )
             )}
 
             {/* Time Pickers */}
@@ -466,13 +479,38 @@ export default function BookingScreen() {
                   </TouchableOpacity>
                 </View>
                 {showStartTimePicker && (
-                  <DateTimePicker
-                    value={getPickerTime(startTime)}
-                    mode="time"
-                    is24Hour={false}
-                    display="default"
-                    onChange={onStartTimeChange}
-                  />
+                  Platform.OS === 'ios' ? (
+                    <Modal transparent animationType="slide" visible={showStartTimePicker}>
+                      <View style={styles.pickerModalOverlay}>
+                        <View style={styles.pickerModalContent}>
+                          <View style={styles.pickerModalHeader}>
+                            <TouchableOpacity onPress={() => setShowStartTimePicker(false)}>
+                              <Text style={styles.pickerModalDoneText}>Done</Text>
+                            </TouchableOpacity>
+                          </View>
+                          <View style={{ backgroundColor: COLORS.surface }}>
+                            <DateTimePicker
+                              value={getPickerTime(startTime)}
+                              mode="time"
+                              is24Hour={false}
+                              display="spinner"
+                              onChange={onStartTimeChange}
+                              style={{ width: '100%', height: 200 }}
+                              textColor={COLORS.text}
+                            />
+                          </View>
+                        </View>
+                      </View>
+                    </Modal>
+                  ) : (
+                    <DateTimePicker
+                      value={getPickerTime(startTime)}
+                      mode="time"
+                      is24Hour={false}
+                      display="default"
+                      onChange={onStartTimeChange}
+                    />
+                  )
                 )}
               </View>
 
@@ -491,13 +529,38 @@ export default function BookingScreen() {
                   </TouchableOpacity>
                 </View>
                 {showEndTimePicker && (
-                  <DateTimePicker
-                    value={getPickerTime(endTime)}
-                    mode="time"
-                    is24Hour={false}
-                    display="default"
-                    onChange={onEndTimeChange}
-                  />
+                  Platform.OS === 'ios' ? (
+                    <Modal transparent animationType="slide" visible={showEndTimePicker}>
+                      <View style={styles.pickerModalOverlay}>
+                        <View style={styles.pickerModalContent}>
+                          <View style={styles.pickerModalHeader}>
+                            <TouchableOpacity onPress={() => setShowEndTimePicker(false)}>
+                              <Text style={styles.pickerModalDoneText}>Done</Text>
+                            </TouchableOpacity>
+                          </View>
+                          <View style={{ backgroundColor: COLORS.surface }}>
+                            <DateTimePicker
+                              value={getPickerTime(endTime)}
+                              mode="time"
+                              is24Hour={false}
+                              display="spinner"
+                              onChange={onEndTimeChange}
+                              style={{ width: '100%', height: 200 }}
+                              textColor={COLORS.text}
+                            />
+                          </View>
+                        </View>
+                      </View>
+                    </Modal>
+                  ) : (
+                    <DateTimePicker
+                      value={getPickerTime(endTime)}
+                      mode="time"
+                      is24Hour={false}
+                      display="default"
+                      onChange={onEndTimeChange}
+                    />
+                  )
                 )}
               </View>
             </View>
@@ -915,5 +978,32 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#F57F17',
     fontWeight: '700',
+  },
+  pickerModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  pickerModalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 0,
+    zIndex: 9999,
+  },
+  pickerModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  pickerModalDoneText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

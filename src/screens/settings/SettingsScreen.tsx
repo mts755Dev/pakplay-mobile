@@ -8,15 +8,17 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
-import Header from '../../components/Header';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, SPACING, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { supabase } from '../../config/supabase';
 import { showToast } from '../../utils/toast';
+
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
@@ -101,7 +103,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.wrapper}>
-      <Header />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.secondary} />
       <KeyboardAwareScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -114,15 +116,16 @@ export default function SettingsScreen() {
       >
         {/* Hero Header */}
         <View style={styles.heroSection}>
-          <View style={styles.bubble1} />
-          <View style={styles.bubble2} />
-
+          {/* Back Button */}
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color={COLORS.card} />
+            <Ionicons name="arrow-back" size={24} color={COLORS.textInverse} />
           </TouchableOpacity>
+
+          <View style={styles.bubble1} />
+          <View style={styles.bubble2} />
 
           <View style={styles.heroContent}>
             <View style={styles.iconContainer}>
@@ -262,12 +265,24 @@ const styles = StyleSheet.create({
   // Hero Section
   heroSection: {
     backgroundColor: COLORS.secondary,
-    paddingTop: SPACING.md,
+    paddingTop: STATUSBAR_HEIGHT + SPACING.lg,
     paddingBottom: SPACING.xl,
     paddingHorizontal: SPACING.lg,
     position: 'relative',
     overflow: 'hidden',
     marginBottom: SPACING.md,
+  },
+  backButton: {
+    position: 'absolute',
+    top: STATUSBAR_HEIGHT + SPACING.sm,
+    left: SPACING.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   bubble1: {
     position: 'absolute',
@@ -287,17 +302,9 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
   heroContent: {
     alignItems: 'center',
+    marginTop: SPACING.md,
   },
   iconContainer: {
     width: 60,

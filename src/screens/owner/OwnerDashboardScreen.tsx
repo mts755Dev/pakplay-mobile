@@ -15,7 +15,7 @@ import Header from '../../components/Header';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, SPACING } from '../../constants/theme';
-import { fetchOwnerDashboard, fetchOwnerBookings } from '../../services/actions';
+import { fetchOwnerDashboard, fetchOwnerBookings, autoUpdateBookingStatuses } from '../../services/actions';
 import { isPast, parseISO } from 'date-fns';
 
 interface DashboardStats {
@@ -49,7 +49,12 @@ export default function OwnerDashboardScreen() {
       const dashboardData = await fetchOwnerDashboard(user.id);
       
       // Fetch recent bookings
-      const bookingsData = await fetchOwnerBookings(user.id);
+      let bookingsData = await fetchOwnerBookings(user.id);
+      const hasUpdates = await autoUpdateBookingStatuses(bookingsData || []);
+      if (hasUpdates) {
+        bookingsData = await fetchOwnerBookings(user.id);
+      }
+      
       const bookingsArray = Array.isArray(bookingsData) ? bookingsData : [];
       
       // Filter out expired pending bookings and apply effective status

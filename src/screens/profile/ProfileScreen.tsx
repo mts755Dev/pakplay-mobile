@@ -7,16 +7,18 @@ import {
   ActivityIndicator,
   TextInput,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
-import Header from '../../components/Header';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, SPACING, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { fetchUserProfile, updateProfile } from '../../services/actions';
 import { supabase } from '../../config/supabase';
 import { showToast } from '../../utils/toast';
+
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 
 interface ProfileData {
   full_name: string | null;
@@ -148,7 +150,7 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.wrapper}>
-      <Header />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.secondary} />
       <KeyboardAwareScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -161,6 +163,14 @@ export default function ProfileScreen() {
       >
         {/* Blue Hero Section */}
         <View style={styles.heroSection}>
+          {/* Back Button */}
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.textInverse} />
+          </TouchableOpacity>
+
           <View style={styles.bubble1} />
           <View style={styles.bubble2} />
           <View style={styles.bubble3} />
@@ -401,12 +411,24 @@ const styles = StyleSheet.create({
   // Hero Section
   heroSection: {
     backgroundColor: COLORS.secondary,
-    paddingTop: SPACING.xl,
+    paddingTop: STATUSBAR_HEIGHT + SPACING.lg,
     paddingBottom: SPACING.xl * 1.5,
     paddingHorizontal: SPACING.lg,
     position: 'relative',
     overflow: 'hidden',
     alignItems: 'center',
+  },
+  backButton: {
+    position: 'absolute',
+    top: STATUSBAR_HEIGHT + SPACING.sm,
+    left: SPACING.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   bubble1: {
     position: 'absolute',
@@ -484,12 +506,12 @@ const styles = StyleSheet.create({
   // Edit Icon Button
   editIconButton: {
     position: 'absolute',
-    top: SPACING.md,
-    right: SPACING.lg,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    top: STATUSBAR_HEIGHT + SPACING.sm,
+    right: SPACING.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
@@ -606,7 +628,7 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.md,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },

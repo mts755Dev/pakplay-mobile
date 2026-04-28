@@ -5,18 +5,22 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Platform,
+  StatusBar,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Card from '../../components/Card';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, SPACING, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
+
 export default function TermsScreen() {
   const navigation = useNavigation();
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <View style={styles.wrapper}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.secondary} />
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Hero Header */}
         <View style={styles.heroSection}>
@@ -29,7 +33,7 @@ export default function TermsScreen() {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color={COLORS.card} />
+            <Ionicons name="arrow-back" size={24} color={COLORS.textInverse} />
           </TouchableOpacity>
           
           {/* Icon */}
@@ -310,12 +314,12 @@ export default function TermsScreen() {
 
         <View style={{ height: SPACING.xxl }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  wrapper: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
@@ -326,7 +330,7 @@ const styles = StyleSheet.create({
   // Hero Section
   heroSection: {
     backgroundColor: COLORS.secondary,
-    paddingTop: SPACING.md,
+    paddingTop: STATUSBAR_HEIGHT + SPACING.lg,
     paddingBottom: SPACING.xl + SPACING.md,
     paddingHorizontal: SPACING.lg,
     position: 'relative',
@@ -352,13 +356,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    position: 'absolute',
+    top: STATUSBAR_HEIGHT + SPACING.sm,
+    left: SPACING.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: SPACING.lg,
+    zIndex: 10,
   },
   iconContainer: {
     width: 64,

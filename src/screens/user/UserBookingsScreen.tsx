@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
+import { autoUpdateBookingStatuses } from '../../services/actions';
 import { showToast } from '../../utils/toast';
 
 const { width } = Dimensions.get('window');
@@ -102,7 +103,44 @@ export default function UserBookingsScreen() {
 
       if (error) throw error;
 
-      const formattedBookings: Booking[] = (data || []).map((booking: any) => {
+      // Auto update statuses (mark expired confirmed as completed, delete expired pending)
+      const hasUpdates = await autoUpdateBookingStatuses(data || []);
+      
+      // If there were updates, fetch again to get the latest data
+      let finalData = data;
+      if (hasUpdates) {
+        const { data: updatedData, error: updatedError } = await supabase
+          .from('bookings')
+          .select(`
+            id,
+            booking_date,
+            start_time,
+            end_time,
+            status,
+            total_price,
+            total_hours,
+            player_name,
+            player_email,
+            player_phone,
+            created_at,
+            venues (
+              name,
+              venue_photos (
+                photo_url,
+                display_order
+              )
+            )
+          `)
+          .eq('player_email', user.email)
+          .order('booking_date', { ascending: false })
+          .order('start_time', { ascending: false });
+          
+        if (!updatedError) {
+          finalData = updatedData;
+        }
+      }
+
+      const formattedBookings: Booking[] = (finalData || []).map((booking: any) => {
         const photos = booking.venues?.venue_photos || [];
         const sortedPhotos = photos.sort((a: any, b: any) => a.display_order - b.display_order);
         const firstPhoto = sortedPhotos[0]?.photo_url || null;

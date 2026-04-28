@@ -6,12 +6,17 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import Header from '../../components/Header';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, SPACING, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { fetchOwnerAnalytics } from '../../services/actions';
+
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 
 interface AnalyticsData {
   venues: any[];
@@ -22,6 +27,7 @@ interface AnalyticsData {
 
 export default function OwnerAnalyticsScreen() {
   const { user } = useAuth();
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [analytics, setAnalytics] = useState<AnalyticsData>({
@@ -70,7 +76,7 @@ export default function OwnerAnalyticsScreen() {
 
   return (
     <View style={styles.wrapper}>
-      <Header />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.secondary} />
       <ScrollView
         style={styles.container}
         showsVerticalScrollIndicator={false}
@@ -80,6 +86,14 @@ export default function OwnerAnalyticsScreen() {
       >
         {/* Hero Section */}
         <View style={styles.heroSection}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => navigation.navigate('OwnerMore' as never)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.textInverse} />
+          </TouchableOpacity>
+          
           <View style={styles.bubble1} />
           <View style={styles.bubble2} />
 
@@ -177,9 +191,9 @@ export default function OwnerAnalyticsScreen() {
           ) : (
             <View style={styles.venuesList}>
               {analytics.venues.map((venue) => {
-                const venueBookings = venue.total_bookings || 0;
-                const venueRevenue = 0;
-                const maxBookings = Math.max(...analytics.venues.map(v => v.total_bookings || 0), 1);
+                const venueBookings = venue.actual_bookings || venue.total_bookings || 0;
+                const venueRevenue = venue.revenue || 0;
+                const maxBookings = Math.max(...analytics.venues.map(v => v.actual_bookings || v.total_bookings || 0), 1);
                 const bookingPercentage = (venueBookings / maxBookings) * 100;
 
                 return (
@@ -253,28 +267,44 @@ export default function OwnerAnalyticsScreen() {
             </View>
 
             <View style={styles.recentList}>
-              {analytics.recentBookings.slice(0, 5).map((booking, index) => (
-                <View 
-                  key={booking.id} 
-                  style={[
-                    styles.recentItem,
-                    index === analytics.recentBookings.slice(0, 5).length - 1 && styles.recentItemLast
-                  ]}
-                >
-                  <View style={styles.recentIcon}>
-                    <Ionicons name="checkmark" size={16} color="#10B981" />
-                  </View>
-                  <View style={styles.recentContent}>
-                    <Text style={styles.recentTitle} numberOfLines={1}>
-                      {booking.venue_name || 'Venue Booking'}
+              {analytics.recentBookings.slice(0, 5).map((booking, index) => {
+                const isCancelled = booking.status === 'cancelled';
+                const isPending = booking.status === 'pending';
+                
+                let iconName = "checkmark";
+                let iconColor = "#10B981";
+                
+                if (isCancelled) {
+                  iconName = "close";
+                  iconColor = COLORS.error;
+                } else if (isPending) {
+                  iconName = "time";
+                  iconColor = COLORS.warning;
+                }
+
+                return (
+                  <View 
+                    key={booking.id} 
+                    style={[
+                      styles.recentItem,
+                      index === analytics.recentBookings.slice(0, 5).length - 1 && styles.recentItemLast
+                    ]}
+                  >
+                    <View style={[styles.recentIcon, { backgroundColor: iconColor + '15' }]}>
+                      <Ionicons name={iconName as any} size={16} color={iconColor} />
+                    </View>
+                    <View style={styles.recentContent}>
+                      <Text style={styles.recentTitle} numberOfLines={1}>
+                        {booking.venue_name || 'Venue Booking'}
+                      </Text>
+                      <Text style={styles.recentDate}>{booking.booking_date}</Text>
+                    </View>
+                    <Text style={[styles.recentAmount, { color: iconColor }, isCancelled && { color: COLORS.mutedForeground, textDecorationLine: 'line-through' }]}>
+                      PKR {(booking.total_price || 0).toLocaleString()}
                     </Text>
-                    <Text style={styles.recentDate}>{booking.booking_date}</Text>
                   </View>
-                  <Text style={styles.recentAmount}>
-                    PKR {(booking.total_amount || 0).toLocaleString()}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </View>
         )}
@@ -303,12 +333,24 @@ const styles = StyleSheet.create({
   // Hero Section
   heroSection: {
     backgroundColor: COLORS.secondary,
-    paddingTop: SPACING.xl,
+    paddingTop: STATUSBAR_HEIGHT + SPACING.md,
     paddingBottom: SPACING.xl * 1.5,
     paddingHorizontal: SPACING.lg,
     position: 'relative',
     overflow: 'hidden',
     alignItems: 'center',
+  },
+  backButton: {
+    position: 'absolute',
+    top: STATUSBAR_HEIGHT + SPACING.sm,
+    left: SPACING.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   bubble1: {
     position: 'absolute',
@@ -573,7 +615,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#10B981' + '15',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: SPACING.sm,
@@ -594,6 +635,5 @@ const styles = StyleSheet.create({
   recentAmount: {
     fontSize: FONT_SIZES.sm,
     fontWeight: FONT_WEIGHTS.bold,
-    color: '#10B981',
   },
 });

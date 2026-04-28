@@ -97,6 +97,11 @@ export default function RootNavigator() {
             options={{ headerShown: false }}
           />
           <Stack.Screen 
+            name="MainTabs" 
+            component={MainTabNavigator} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
             name="AddVenue" 
             component={AddVenueScreen} 
             options={{ headerShown: false }}

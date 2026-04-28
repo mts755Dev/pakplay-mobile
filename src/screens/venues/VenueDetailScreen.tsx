@@ -268,7 +268,7 @@ export default function VenueDetailScreen() {
           {loyaltyTiers.length > 0 && (
             <View style={styles.loyaltySection}>
               {/* User's current loyalty badge — Premium card */}
-              {loyaltyStatus?.currentTier && (() => {
+              {loyaltyStatus?.currentTier && !(user && venue.owner_id === user.id) && (() => {
                 const tierColors = getLoyaltyTierColor(loyaltyStatus.currentTier.tier_name);
                 return (
                   <View style={[styles.loyaltyBadgeCard, { backgroundColor: tierColors.bg, borderColor: tierColors.border }]}>
@@ -332,7 +332,7 @@ export default function VenueDetailScreen() {
               })()}
 
               {/* Progress towards next tier */}
-              {loyaltyStatus?.nextTier && user && (() => {
+              {loyaltyStatus?.nextTier && user && !(user && venue.owner_id === user.id) && (() => {
                 const nextTierColors = getLoyaltyTierColor(loyaltyStatus.nextTier.tier_name);
                 const remaining = loyaltyStatus.nextTier.min_bookings - loyaltyStatus.completedBookings;
                 const progress = Math.min((loyaltyStatus.completedBookings / loyaltyStatus.nextTier.min_bookings) * 100, 100);
@@ -410,8 +410,8 @@ export default function VenueDetailScreen() {
                 );
               })()}
 
-              {/* Show program for non-logged-in users */}
-              {!user && (
+              {/* Show program for non-logged-in users or venue owner */}
+              {(!user || (user && venue.owner_id === user.id)) && (
                 <View style={[styles.loyaltyProgressCard, { backgroundColor: COLORS.surface }]}>
                   <View style={[styles.progressDecor, { top: -15, right: -15, backgroundColor: COLORS.primary + '08', width: 80, height: 80 }]} />
 
@@ -422,7 +422,9 @@ export default function VenueDetailScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.progressMainTitle, { color: COLORS.text }]}>Loyalty Rewards</Text>
                       <Text style={[styles.progressSubTitle, { color: COLORS.textMuted }]}>
-                        Sign in & book to earn discounts!
+                        {user && venue.owner_id === user.id 
+                          ? "Your venue's active loyalty program" 
+                          : "Sign in & book to earn discounts!"}
                       </Text>
                     </View>
                   </View>

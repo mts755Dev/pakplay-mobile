@@ -15,7 +15,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import Header from '../../components/Header';
 import { COLORS, SPACING, BORDER_RADIUS } from '../../constants/theme';
-import { fetchOwnerBookings, confirmBooking, deleteBooking } from '../../services/actions';
+import { fetchOwnerBookings, confirmBooking, deleteBooking, autoUpdateBookingStatuses } from '../../services/actions';
 import { showToast } from '../../utils/toast';
 
 const { width } = Dimensions.get('window');
@@ -107,39 +107,15 @@ export default function OwnerBookingsScreen() {
     try {
       const bookingsData = await fetchOwnerBookings(user.id);
       
-      // Auto-delete expired pending bookings
-      if (bookingsData && bookingsData.length > 0) {
-        const now = new Date();
-        const expiredPendingBookings = bookingsData.filter((booking: any) => {
-          if (booking.status !== 'pending') return false;
-          try {
-            const bookingStartTime = new Date(`${booking.booking_date}T${booking.start_time}`);
-            return bookingStartTime < now;
-          } catch {
-            return false;
-          }
-        });
-
-        // Delete expired pending bookings from database
-        if (expiredPendingBookings.length > 0) {
-          console.log(`Auto-deleting ${expiredPendingBookings.length} expired pending bookings`);
-          for (const booking of expiredPendingBookings) {
-            try {
-              await deleteBooking(booking.id);
-              console.log(`Deleted expired pending booking: ${booking.id}`);
-            } catch (error) {
-              console.error(`Failed to delete booking ${booking.id}:`, error);
-            }
-          }
-          
-          // Fetch bookings again after deletion
-          const updatedBookings = await fetchOwnerBookings(user.id);
-          setBookings(updatedBookings || []);
-        } else {
-          setBookings(bookingsData || []);
-        }
+      // Auto-update statuses (mark expired confirmed as completed, delete expired pending)
+      const hasUpdates = await autoUpdateBookingStatuses(bookingsData);
+      
+      if (hasUpdates) {
+        // Fetch bookings again after updates
+        const updatedBookings = await fetchOwnerBookings(user.id);
+        setBookings(updatedBookings || []);
       } else {
-        setBookings([]);
+        setBookings(bookingsData || []);
       }
     } catch (error) {
       console.error('Error fetching bookings:', error);

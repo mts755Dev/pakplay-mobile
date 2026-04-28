@@ -792,21 +792,108 @@ export async function fetchOwnerAnalytics(userId: string) {
 
     const venueIds = venues.map(v => v.id);
 
-    // Fetch bookings for analytics
-    const { data: bookings } = await supabase
+    // Fetch bookings for analytics (recent ones)
+    const { data: recentBookings } = await supabase
       .from('bookings')
       .select('*, venues(name)')
       .in('venue_id', venueIds)
       .order('created_at', { ascending: false })
       .limit(10);
 
-    const totalBookings = venues.reduce((sum, v) => sum + (v.total_bookings || 0), 0);
+    const hasUpdates = await autoUpdateBookingStatuses(recentBookings || []);
+    let finalBookings = recentBookings;
+    if (hasUpdates) {
+      const { data: updatedBookings } = await supabase
+        .from('bookings')
+        .select('*, venues(name)')
+        .in('venue_id', venueIds)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      finalBookings = updatedBookings;
+    }
+
+    // Fetch all bookings to calculate total revenue and total bookings accurately
+    const { data: allBookings } = await supabase
+      .from('bookings')
+      .select('id, venue_id, total_price, status, booking_date, start_time, end_time')
+      .in('venue_id', venueIds);
+
+    // Also run auto-update on all bookings to ensure accurate revenue
+    if (allBookings) {
+      await autoUpdateBookingStatuses(allBookings);
+    }
+
+    // Re-fetch if needed, or just calculate based on current time
+    // Actually, to save a network call, we can just calculate revenue 
+    // considering expired confirmed as completed and ignoring expired pending.
+    let totalRevenue = 0;
+    let actualTotalBookings = 0;
+
+    // Calculate per-venue stats
+    const venueStats: Record<string, { bookings: number, revenue: number }> = {};
+    venueIds.forEach(id => {
+      venueStats[id] = { bookings: 0, revenue: 0 };
+    });
+
+    if (allBookings) {
+      const now = new Date();
+      
+      allBookings.forEach(booking => {
+        const vId = booking.venue_id;
+        if (!venueStats[vId]) return;
+
+        let effectiveStatus = booking.status;
+        
+        // Determine effective status
+        if (booking.status === 'pending') {
+          try {
+            if (new Date(`${booking.booking_date}T${booking.start_time}`) < now) {
+              effectiveStatus = 'expired'; // Will be deleted, so ignore
+            }
+          } catch (e) {}
+        } else if (booking.status === 'confirmed') {
+          try {
+            if (new Date(`${booking.booking_date}T${booking.end_time}`) < now) {
+              effectiveStatus = 'completed';
+            }
+          } catch (e) {}
+        }
+
+        if (effectiveStatus !== 'expired' && effectiveStatus !== 'cancelled') {
+          venueStats[vId].bookings += 1;
+          actualTotalBookings += 1;
+          
+          // Only add to revenue if the booking is confirmed or completed
+          if (effectiveStatus === 'confirmed' || effectiveStatus === 'completed') {
+            const amount = booking.total_price || 0;
+            venueStats[vId].revenue += amount;
+            totalRevenue += amount;
+          }
+        }
+      });
+    } else {
+      // Fallback if allBookings fails
+      actualTotalBookings = venues.reduce((sum, v) => sum + (v.total_bookings || 0), 0);
+    }
+
+    // Attach stats to venues
+    const enrichedVenues = venues.map(v => ({
+      ...v,
+      actual_bookings: venueStats[v.id]?.bookings || v.total_bookings || 0,
+      revenue: venueStats[v.id]?.revenue || 0
+    }));
+
+    // Ensure recent bookings also have the correct venue name mapped
+    const enrichedRecentBookings = (finalBookings || []).map(b => ({
+      ...b,
+      venue_name: b.venues?.name || 'Venue Booking'
+    }));
 
     return {
-      venues,
-      totalBookings,
-      totalRevenue: 0, // Calculate if needed
-      recentBookings: bookings || []
+      venues: enrichedVenues,
+      totalBookings: actualTotalBookings,
+      totalRevenue,
+      recentBookings: enrichedRecentBookings
     };
   } catch (error) {
     console.error('Error fetching owner analytics:', error);
@@ -820,6 +907,48 @@ export async function fetchOwnerAnalytics(userId: string) {
 }
 
 // ==================== BOOKING ACTIONS ====================
+
+/**
+ * Auto-update booking statuses:
+ * - Mark expired confirmed bookings as completed
+ * - Delete expired pending bookings
+ */
+export async function autoUpdateBookingStatuses(bookings: any[]) {
+  if (!bookings || bookings.length === 0) return false;
+  
+  const now = new Date();
+  let hasUpdates = false;
+  
+  const expiredPending = bookings.filter(b => {
+    if (b.status !== 'pending') return false;
+    try {
+      return new Date(`${b.booking_date}T${b.start_time}`) < now;
+    } catch { return false; }
+  });
+  
+  const expiredConfirmed = bookings.filter(b => {
+    if (b.status !== 'confirmed') return false;
+    try {
+      return new Date(`${b.booking_date}T${b.end_time}`) < now;
+    } catch { return false; }
+  });
+  
+  for (const b of expiredPending) {
+    try {
+      await supabase.from('bookings').delete().eq('id', b.id);
+      hasUpdates = true;
+    } catch (e) { console.error('Error auto-deleting pending booking:', e); }
+  }
+  
+  for (const b of expiredConfirmed) {
+    try {
+      await supabase.from('bookings').update({ status: 'completed' }).eq('id', b.id);
+      hasUpdates = true;
+    } catch (e) { console.error('Error auto-completing confirmed booking:', e); }
+  }
+  
+  return hasUpdates;
+}
 
 export interface CreateBookingData {
   venue_id: string;

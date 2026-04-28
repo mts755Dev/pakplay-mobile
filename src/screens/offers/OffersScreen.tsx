@@ -18,6 +18,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
+import SelectInput from '../../components/SelectInput';
 import { useQuery } from '@tanstack/react-query';
 import Header from '../../components/Header';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, SPACING, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
@@ -386,27 +387,15 @@ export default function OffersScreen() {
                   <Ionicons name="map-outline" size={18} color={COLORS.primary} />
                   <Text style={styles.filterLabel}>Province</Text>
                 </View>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={tempProvince}
-                    onValueChange={(value) => setTempProvince(value)}
-                    style={styles.picker}
-                    dropdownIconColor={COLORS.textMuted}
-                  >
-                    <Picker.Item label="All Provinces" value="" color={COLORS.textMuted} />
-                    {provinces.map((province) => (
-                      <Picker.Item 
-                        key={province.id} 
-                        label={province.name} 
-                        value={province.name}
-                        color={COLORS.text}
-                      />
-                    ))}
-                  </Picker>
-                  <View style={styles.pickerIcon}>
-                    <Ionicons name="chevron-down" size={20} color={COLORS.textMuted} />
-                  </View>
-                </View>
+                <SelectInput
+                  value={tempProvince}
+                  onSelect={(value) => setTempProvince(value)}
+                  options={[
+                    { label: 'All Provinces', value: '' },
+                    ...provinces.map(p => ({ label: p.name, value: p.name }))
+                  ]}
+                  placeholder="All Provinces"
+                />
               </View>
 
               {/* City Filter */}
@@ -416,27 +405,15 @@ export default function OffersScreen() {
                     <Ionicons name="location-outline" size={18} color={COLORS.primary} />
                     <Text style={styles.filterLabel}>City</Text>
                   </View>
-                  <View style={styles.pickerContainer}>
-                    <Picker
-                      selectedValue={tempCity}
-                      onValueChange={(value) => setTempCity(value)}
-                      style={styles.picker}
-                      dropdownIconColor={COLORS.textMuted}
-                    >
-                      <Picker.Item label="All Cities" value="" color={COLORS.textMuted} />
-                      {cities.map((city) => (
-                        <Picker.Item 
-                          key={city.id} 
-                          label={city.name} 
-                          value={city.name}
-                          color={COLORS.text}
-                        />
-                      ))}
-                    </Picker>
-                    <View style={styles.pickerIcon}>
-                      <Ionicons name="chevron-down" size={20} color={COLORS.textMuted} />
-                    </View>
-                  </View>
+                  <SelectInput
+                    value={tempCity}
+                    onSelect={(value) => setTempCity(value)}
+                    options={[
+                      { label: 'All Cities', value: '' },
+                      ...cities.map(c => ({ label: c.name, value: c.name }))
+                    ]}
+                    placeholder="All Cities"
+                  />
                 </View>
               )}
 
@@ -447,27 +424,15 @@ export default function OffersScreen() {
                     <Ionicons name="navigate-outline" size={18} color={COLORS.primary} />
                     <Text style={styles.filterLabel}>Area</Text>
                   </View>
-                  <View style={styles.pickerContainer}>
-                    <Picker
-                      selectedValue={tempArea}
-                      onValueChange={(value) => setTempArea(value)}
-                      style={styles.picker}
-                      dropdownIconColor={COLORS.textMuted}
-                    >
-                      <Picker.Item label="All Areas" value="" color={COLORS.textMuted} />
-                      {areas.map((area) => (
-                        <Picker.Item 
-                          key={area.id} 
-                          label={area.name} 
-                          value={area.name}
-                          color={COLORS.text}
-                        />
-                      ))}
-                    </Picker>
-                    <View style={styles.pickerIcon}>
-                      <Ionicons name="chevron-down" size={20} color={COLORS.textMuted} />
-                    </View>
-                  </View>
+                  <SelectInput
+                    value={tempArea}
+                    onSelect={(value) => setTempArea(value)}
+                    options={[
+                      { label: 'All Areas', value: '' },
+                      ...areas.map(a => ({ label: a.name, value: a.name }))
+                    ]}
+                    placeholder="All Areas"
+                  />
                 </View>
               )}
 
@@ -477,21 +442,16 @@ export default function OffersScreen() {
                   <Ionicons name="swap-vertical-outline" size={18} color={COLORS.primary} />
                   <Text style={styles.filterLabel}>Sort by Discount</Text>
                 </View>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={tempDiscountSort}
-                    onValueChange={(value) => setTempDiscountSort(value)}
-                    style={styles.picker}
-                    dropdownIconColor={COLORS.textMuted}
-                  >
-                    <Picker.Item label="Default (Newest First)" value="" color={COLORS.textMuted} />
-                    <Picker.Item label="Discount: High to Low" value="high-to-low" color={COLORS.text} />
-                    <Picker.Item label="Discount: Low to High" value="low-to-high" color={COLORS.text} />
-                  </Picker>
-                  <View style={styles.pickerIcon}>
-                    <Ionicons name="chevron-down" size={20} color={COLORS.textMuted} />
-                  </View>
-                </View>
+                <SelectInput
+                  value={tempDiscountSort}
+                  onSelect={(value) => setTempDiscountSort(value)}
+                  options={[
+                    { label: 'Default (Newest First)', value: '' },
+                    { label: 'Discount: High to Low', value: 'high-to-low' },
+                    { label: 'Discount: Low to High', value: 'low-to-high' }
+                  ]}
+                  placeholder="Default (Newest First)"
+                />
               </View>
 
               {/* Active Filters Summary */}
