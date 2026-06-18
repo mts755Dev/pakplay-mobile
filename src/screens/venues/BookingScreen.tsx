@@ -8,6 +8,7 @@ import {
   Linking,
   Platform,
   StatusBar,
+  Modal,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -16,8 +17,14 @@ import { RootStackParamList } from '../../navigation/RootNavigator';
 import { Ionicons } from '@expo/vector-icons';
 import Card from '../../components/Card';
 import Input from '../../components/Input';
+import BookingTimeSlotGrid from '../../components/BookingTimeSlotGrid';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, SPACING, BORDER_RADIUS } from '../../constants/theme';
-import { createBooking, LoyaltyTier } from '../../services/actions';
+import { createBooking, fetchVenueBookingsForDate, LoyaltyTier } from '../../services/actions';
+import {
+  buildBookingWhatsAppMessage,
+  formatWhatsAppNumber,
+  getBookingWhatsAppTarget,
+} from '../../lib/booking-whatsapp';
 import { Tables } from '../../types/supabase';
 import { showToast } from '../../utils/toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -31,8 +38,12 @@ const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight ||
 export default function BookingScreen() {
   const navigation = useNavigation();
   const route = useRoute<BookingScreenRouteProp>();
-  const { venue, loyaltyTier: passedLoyaltyTier, loyaltyBookings: passedLoyaltyBookings } = route.params;
+  const { venue, loyaltyTier: passedLoyaltyTier, loyaltyBookings: passedLoyaltyBookings, isOwnerBooking: passedIsOwnerBooking } = route.params;
   const { user, profile } = useAuth();
+
+  const isOwner = Boolean(
+    passedIsOwnerBooking ?? (user?.id && venue?.owner_id === user.id)
+  );
 
   const [bookingDate, setBookingDate] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -42,12 +53,13 @@ export default function BookingScreen() {
   const [playerEmail, setPlayerEmail] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [dayBookings, setDayBookings] = useState<Array<{ start_time: string; end_time: string }>>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
 
-  // Date/Time Picker State
   const [pickerDate, setPickerDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
-  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+
+  const totalCourts = venue?.number_of_courts ?? 1;
 
   // Offer selection state
   const [availableOffers, setAvailableOffers] = useState<SpecialOffer[]>([]);
@@ -59,14 +71,13 @@ export default function BookingScreen() {
   // Single discount selection: 'none' | 'loyalty' | offer ID
   const [selectedDiscount, setSelectedDiscount] = useState<string>('none');
 
-  // Pre-fill form with logged-in user data
+  // Pre-fill form with logged-in player data (owners enter customer details manually)
   useEffect(() => {
-    if (user && profile) {
-      setPlayerEmail(user.email || '');
-      setPlayerName(profile.full_name || '');
-      setPlayerPhone(profile.phone || '');
-    }
-  }, [user, profile]);
+    if (isOwner || !user || !profile) return;
+    setPlayerEmail(user.email || '');
+    setPlayerName(profile.full_name || '');
+    setPlayerPhone(profile.phone || '');
+  }, [user, profile, isOwner]);
 
   // Populate available offers from venue data
   useEffect(() => {
@@ -76,51 +87,52 @@ export default function BookingScreen() {
     }
   }, [venue]);
 
-  // Loyalty data is passed from VenueDetailScreen via navigation params (no re-fetch needed)
+  useEffect(() => {
+    if (!bookingDate || !venue?.id) {
+      setDayBookings([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadDayBookings = async () => {
+      setSlotsLoading(true);
+      const { bookings, error } = await fetchVenueBookingsForDate(venue.id, bookingDate);
+      if (!cancelled) {
+        if (error) {
+          console.error('Error loading day bookings:', error);
+          setDayBookings([]);
+        } else {
+          setDayBookings(bookings);
+        }
+        setSlotsLoading(false);
+      }
+    };
+
+    loadDayBookings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingDate, venue?.id]);
 
   const onDateChange = (event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
       setShowDatePicker(false);
     }
-    
+
     if (selectedDate && event?.type === 'set') {
       setPickerDate(selectedDate);
       const formattedDate = selectedDate.toISOString().split('T')[0];
       setBookingDate(formattedDate);
+      setStartTime('');
+      setEndTime('');
     }
   };
 
-  const onStartTimeChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowStartTimePicker(false);
-    }
-    
-    if (selectedDate && event?.type === 'set') {
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      setStartTime(`${hours}:${minutes}`);
-    }
-  };
-
-  const onEndTimeChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowEndTimePicker(false);
-    }
-    
-    if (selectedDate && event?.type === 'set') {
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      setEndTime(`${hours}:${minutes}`);
-    }
-  };
-
-  const getPickerTime = (timeString: string) => {
-    const d = new Date();
-    if (!timeString) return d;
-    const [hours, minutes] = timeString.split(':').map(Number);
-    d.setHours(hours);
-    d.setMinutes(minutes);
-    return d;
+  const handleSlotChange = (newStart: string, newEnd: string) => {
+    setStartTime(newStart);
+    setEndTime(newEnd);
   };
 
   const formatTime = (time: string | null) => {
@@ -157,12 +169,14 @@ export default function BookingScreen() {
     const hours = calculateTotalHours();
     let price = hours * venue.price_per_hour;
 
+    if (isOwner) {
+      return Math.round(price);
+    }
+
     const offer = getSelectedOffer();
     if (offer) {
-      // Apply offer price
       price = hours * offer.offer_price;
     } else if (isLoyaltySelected() && loyaltyTier) {
-      // Apply loyalty discount
       price = price * (1 - loyaltyTier.discount_percent / 100);
     }
 
@@ -191,17 +205,6 @@ export default function BookingScreen() {
     return '#4CAF50';
   };
 
-  const formatWhatsAppNumber = (phoneNumber: string) => {
-    let cleanNumber = phoneNumber.replace(/\D/g, '');
-    if (cleanNumber.startsWith('0')) {
-      cleanNumber = '92' + cleanNumber.substring(1);
-    }
-    if (!cleanNumber.startsWith('92')) {
-      cleanNumber = '92' + cleanNumber;
-    }
-    return cleanNumber;
-  };
-
   const handleBooking = async () => {
     if (!bookingDate || !startTime || !endTime || !playerName || !playerPhone || !playerEmail) {
       showToast.error('Please fill in all required fields', 'Missing Information');
@@ -214,26 +217,24 @@ export default function BookingScreen() {
       return;
     }
 
-    // Validate booking is not in the past and is at least 1 hour in advance
-    const now = new Date();
-    const bookingDateTime = new Date(`${bookingDate}T${startTime}`);
-    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
-
-    // Check if booking time has already passed
-    if (bookingDateTime < now) {
-      showToast.error('Cannot book for past dates or times', 'Invalid Time');
-      return;
-    }
-
-    // Check if booking is at least 1 hour in advance
-    if (bookingDateTime < oneHourFromNow) {
-      showToast.error('Please book at least 1 hour in advance', 'Minimum Advance Booking Required');
-      return;
-    }
-
     setSubmitting(true);
 
+    const selectedOffer = getSelectedOffer();
+    let discountType: 'offer' | 'loyalty' | null = null;
+    let discountLabel: string | null = null;
+
+    if (!isOwner) {
+      if (selectedOffer) {
+        discountType = 'offer';
+        discountLabel = selectedOffer.offer_name;
+      } else if (isLoyaltySelected() && loyaltyTier) {
+        discountType = 'loyalty';
+        discountLabel = `${loyaltyTier.tier_name} (${loyaltyTier.discount_percent}% off)`;
+      }
+    }
+
     try {
+      const totalPrice = calculateTotalPrice();
       const { error } = await createBooking({
         venue_id: venue.id,
         booking_date: bookingDate,
@@ -244,31 +245,42 @@ export default function BookingScreen() {
         player_phone: playerPhone,
         player_email: playerEmail,
         notes: notes || undefined,
-        total_price: calculateTotalPrice(),
+        total_price: totalPrice,
+        discount_type: discountType,
+        discount_label: discountLabel,
+        owner_user_id: isOwner ? user?.id : null,
       });
 
       if (error) throw new Error(error);
 
-      const message = `🎾 *PakPlay Booking Request* 🎾\n\n` +
-        `📍 *Venue:* ${venue.name}\n` +
-        `📅 *Date:* ${bookingDate}\n` +
-        `⏰ *Time:* ${formatTime(startTime)} - ${formatTime(endTime)}\n` +
-        `⏱️ *Duration:* ${hours} hour(s)\n\n` +
-        `👤 *Customer Details:*\n` +
-        `Name: ${playerName}\n` +
-        `Phone: ${playerPhone}\n` +
-        `Email: ${playerEmail}\n\n` +
-        `💰 *Total Amount:* PKR ${calculateTotalPrice()}` +
-        `${getSelectedOffer() ? `\n🏷️ *Offer Applied:* ${getSelectedOffer()?.offer_name}` : ''}` +
-        `${isLoyaltySelected() && loyaltyTier ? `\n🏆 *Loyalty Discount:* ${loyaltyTier.tier_name} (${loyaltyTier.discount_percent}% off)` : ''}` +
-        `${notes ? `\n\n📝 *Notes:*\n${notes}` : ''}` +
-        `\n\n✨ Booked via *PakPlay*`;
+      const message = buildBookingWhatsAppMessage({
+        isOwnerBooking: isOwner,
+        venueName: venue.name,
+        bookingDate,
+        startTimeLabel: formatTime(startTime),
+        endTimeLabel: formatTime(endTime),
+        totalHours: hours,
+        playerName,
+        playerPhone,
+        playerEmail,
+        totalPrice,
+        notes: notes || undefined,
+      });
 
-      const whatsappUrl = `https://wa.me/${formatWhatsAppNumber(venue.whatsapp_number)}?text=${encodeURIComponent(message)}`;
+      const whatsappTarget = getBookingWhatsAppTarget(
+        isOwner,
+        playerPhone,
+        venue.whatsapp_number
+      );
+      const whatsappUrl = `https://wa.me/${formatWhatsAppNumber(whatsappTarget)}?text=${encodeURIComponent(message)}`;
 
-      showToast.success('Booking request created! Opening WhatsApp to confirm with venue.', 'Success');
-      
-      // Open WhatsApp and go back after a short delay
+      showToast.success(
+        isOwner
+          ? 'Booking saved! Opening WhatsApp to message the customer.'
+          : 'Booking request created! Opening WhatsApp to confirm with venue.',
+        'Success'
+      );
+
       setTimeout(() => {
         Linking.openURL(whatsappUrl);
         navigation.goBack();
@@ -287,7 +299,7 @@ export default function BookingScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Book Your Slot</Text>
+        <Text style={styles.headerTitle}>{isOwner ? 'Book for Customer' : 'Book Your Slot'}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -307,14 +319,22 @@ export default function BookingScreen() {
               <Ionicons name="location-outline" size={16} color={COLORS.textMuted} />
               <Text style={styles.locationText}>{venue.address}, {venue.city}</Text>
             </View>
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Regular Rate:</Text>
-              <Text style={styles.priceValue}>PKR {venue.price_per_hour}/hr</Text>
+            <View style={styles.metaRow}>
+              <View style={styles.priceRow}>
+                <Text style={styles.priceLabel}>Regular Rate:</Text>
+                <Text style={styles.priceValue}>PKR {venue.price_per_hour}/hr</Text>
+              </View>
+              <View style={styles.courtsRow}>
+                <Ionicons name="grid-outline" size={14} color={COLORS.secondary} />
+                <Text style={styles.courtsText}>
+                  {totalCourts} {totalCourts === 1 ? 'court' : 'courts'}
+                </Text>
+              </View>
             </View>
           </Card>
 
-          {/* Discount Selection — only one can be chosen */}
-          {(availableOffers.length > 0 || loyaltyTier) && (
+          {/* Discount Selection — players only */}
+          {!isOwner && (availableOffers.length > 0 || loyaltyTier) && (
             <View style={styles.offerSection}>
               <Text style={styles.sectionTitle}>
                 <Ionicons name="pricetag" size={16} color={COLORS.primary} />{' '}
@@ -412,6 +432,11 @@ export default function BookingScreen() {
           {/* Form */}
           <View style={styles.formSection}>
             <Text style={styles.sectionTitle}>Booking Details</Text>
+            {isOwner && (
+              <Text style={styles.ownerHint}>
+                Enter customer details. WhatsApp opens to the customer's number after booking.
+              </Text>
+            )}
             
             {/* Date Picker */}
             <View style={styles.pickerInputContainer}>
@@ -462,119 +487,36 @@ export default function BookingScreen() {
               )
             )}
 
-            {/* Time Pickers */}
-            <View style={styles.timeRow}>
-              <View style={{ flex: 1 }}>
-                <View style={styles.pickerInputContainer}>
-                  <Text style={styles.pickerLabel}>Start Time *</Text>
-                  <TouchableOpacity 
-                    style={styles.pickerTouchable}
-                    onPress={() => setShowStartTimePicker(true)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={startTime ? styles.pickerValue : styles.pickerPlaceholder}>
-                      {startTime || 'HH:MM'}
-                    </Text>
-                    <Ionicons name="time-outline" size={20} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </View>
-                {showStartTimePicker && (
-                  Platform.OS === 'ios' ? (
-                    <Modal transparent animationType="slide" visible={showStartTimePicker}>
-                      <View style={styles.pickerModalOverlay}>
-                        <View style={styles.pickerModalContent}>
-                          <View style={styles.pickerModalHeader}>
-                            <TouchableOpacity onPress={() => setShowStartTimePicker(false)}>
-                              <Text style={styles.pickerModalDoneText}>Done</Text>
-                            </TouchableOpacity>
-                          </View>
-                          <View style={{ backgroundColor: COLORS.surface }}>
-                            <DateTimePicker
-                              value={getPickerTime(startTime)}
-                              mode="time"
-                              is24Hour={false}
-                              display="spinner"
-                              onChange={onStartTimeChange}
-                              style={{ width: '100%', height: 200 }}
-                              textColor={COLORS.text}
-                            />
-                          </View>
-                        </View>
-                      </View>
-                    </Modal>
-                  ) : (
-                    <DateTimePicker
-                      value={getPickerTime(startTime)}
-                      mode="time"
-                      is24Hour={false}
-                      display="default"
-                      onChange={onStartTimeChange}
-                    />
-                  )
-                )}
+            {startTime && endTime ? (
+              <View style={styles.selectedTimeBox}>
+                <Ionicons name="time" size={18} color={COLORS.primary} />
+                <Text style={styles.selectedTimeText}>
+                  {formatTime(startTime)} – {formatTime(endTime)}
+                </Text>
               </View>
+            ) : null}
 
-              <View style={{ flex: 1 }}>
-                <View style={styles.pickerInputContainer}>
-                  <Text style={styles.pickerLabel}>End Time *</Text>
-                  <TouchableOpacity 
-                    style={styles.pickerTouchable}
-                    onPress={() => setShowEndTimePicker(true)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={endTime ? styles.pickerValue : styles.pickerPlaceholder}>
-                      {endTime || 'HH:MM'}
-                    </Text>
-                    <Ionicons name="time-outline" size={20} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </View>
-                {showEndTimePicker && (
-                  Platform.OS === 'ios' ? (
-                    <Modal transparent animationType="slide" visible={showEndTimePicker}>
-                      <View style={styles.pickerModalOverlay}>
-                        <View style={styles.pickerModalContent}>
-                          <View style={styles.pickerModalHeader}>
-                            <TouchableOpacity onPress={() => setShowEndTimePicker(false)}>
-                              <Text style={styles.pickerModalDoneText}>Done</Text>
-                            </TouchableOpacity>
-                          </View>
-                          <View style={{ backgroundColor: COLORS.surface }}>
-                            <DateTimePicker
-                              value={getPickerTime(endTime)}
-                              mode="time"
-                              is24Hour={false}
-                              display="spinner"
-                              onChange={onEndTimeChange}
-                              style={{ width: '100%', height: 200 }}
-                              textColor={COLORS.text}
-                            />
-                          </View>
-                        </View>
-                      </View>
-                    </Modal>
-                  ) : (
-                    <DateTimePicker
-                      value={getPickerTime(endTime)}
-                      mode="time"
-                      is24Hour={false}
-                      display="default"
-                      onChange={onEndTimeChange}
-                    />
-                  )
-                )}
-              </View>
-            </View>
+            <BookingTimeSlotGrid
+              bookingDate={bookingDate}
+              dayBookings={dayBookings}
+              totalCourts={totalCourts}
+              startTime={startTime}
+              endTime={endTime}
+              onChange={handleSlotChange}
+              loading={slotsLoading}
+              isOwner={isOwner}
+            />
 
             <Input
-              label="Your Name *"
-              placeholder="John Doe"
+              label={isOwner ? 'Customer Name *' : 'Your Name *'}
+              placeholder={isOwner ? "Customer's full name" : 'John Doe'}
               value={playerName}
               onChangeText={setPlayerName}
               style={styles.inputStyle}
             />
 
             <Input
-              label="Phone Number *"
+              label={isOwner ? 'Customer Phone *' : 'Phone Number *'}
               placeholder="+92 300 1234567"
               value={playerPhone}
               onChangeText={setPlayerPhone}
@@ -583,14 +525,14 @@ export default function BookingScreen() {
             />
 
             <Input
-              label={user ? "Email (from your account)" : "Email *"}
-              placeholder="john@example.com"
+              label={isOwner ? 'Customer Email *' : user ? 'Email (from your account)' : 'Email *'}
+              placeholder={isOwner ? 'customer@email.com' : 'john@example.com'}
               value={playerEmail}
               onChangeText={setPlayerEmail}
               keyboardType="email-address"
               autoCapitalize="none"
-              editable={!user}
-              style={[styles.inputStyle, !user ? {} : styles.disabledInput]}
+              editable={isOwner || !user}
+              style={[styles.inputStyle, !isOwner && user ? styles.disabledInput : {}]}
             />
 
             <Input
@@ -608,7 +550,7 @@ export default function BookingScreen() {
       {/* Bottom Footer */}
       <View style={styles.footer}>
         <View style={styles.priceContainer}>
-          {hasDiscount() && calculateTotalHours() > 0 && (
+          {hasDiscount() && !isOwner && calculateTotalHours() > 0 && (
             <View style={styles.savingsRow}>
               <Text style={styles.originalTotalPrice}>PKR {getOriginalPrice().toLocaleString()}</Text>
               <View style={styles.savingsBadge}>
@@ -616,7 +558,7 @@ export default function BookingScreen() {
               </View>
             </View>
           )}
-          {isLoyaltySelected() && loyaltyTier && calculateTotalHours() > 0 && (
+          {isLoyaltySelected() && loyaltyTier && !isOwner && calculateTotalHours() > 0 && (
             <View style={styles.loyaltySavingsRow}>
               <Ionicons name="trophy" size={12} color={getLoyaltyColor()} />
               <Text style={styles.loyaltySavingsText}>
@@ -624,7 +566,7 @@ export default function BookingScreen() {
               </Text>
             </View>
           )}
-          {getSelectedOffer() && calculateTotalHours() > 0 && (
+          {getSelectedOffer() && !isOwner && calculateTotalHours() > 0 && (
             <View style={styles.loyaltySavingsRow}>
               <Ionicons name="pricetag" size={12} color={COLORS.primary} />
               <Text style={[styles.loyaltySavingsText, { color: COLORS.primary }]}>
@@ -633,7 +575,7 @@ export default function BookingScreen() {
             </View>
           )}
           <Text style={styles.totalLabel}>Total Amount</Text>
-          <Text style={[styles.totalPrice, hasDiscount() && styles.totalPriceWithOffer]}>
+          <Text style={[styles.totalPrice, hasDiscount() && !isOwner && styles.totalPriceWithOffer]}>
             PKR {calculateTotalPrice().toLocaleString()}
           </Text>
           {calculateTotalHours() > 0 && (
@@ -648,7 +590,9 @@ export default function BookingScreen() {
           {submitting ? (
             <ActivityIndicator color="#FFF" size="small" />
           ) : (
-            <Text style={styles.confirmButtonText}>Confirm Booking</Text>
+            <Text style={styles.confirmButtonText}>
+              {isOwner ? 'Save & Message Customer' : 'Confirm Booking'}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -718,6 +662,12 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.md,
     color: COLORS.textMuted,
   },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -727,6 +677,38 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: BORDER_RADIUS.md,
     gap: 6,
+  },
+  courtsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.secondary + '12',
+    alignSelf: 'flex-start',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 6,
+    borderRadius: BORDER_RADIUS.md,
+    gap: 6,
+  },
+  courtsText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.secondary,
+    fontWeight: '700',
+  },
+  selectedTimeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.primary + '10',
+    borderWidth: 1,
+    borderColor: COLORS.primary + '30',
+    borderRadius: BORDER_RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  selectedTimeText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
   priceLabel: {
     fontSize: FONT_SIZES.sm,
@@ -837,6 +819,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.text,
     marginBottom: SPACING.sm,
+  },
+  ownerHint: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textMuted,
+    marginBottom: SPACING.md,
+    lineHeight: 20,
   },
   pickerInputContainer: {
     marginBottom: SPACING.md,

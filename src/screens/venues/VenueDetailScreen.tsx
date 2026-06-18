@@ -137,18 +137,19 @@ export default function VenueDetailScreen() {
   };
 
   const handleBookNow = () => {
-    // Check if user is logged in
     if (!user) {
       showToast.info('Please sign in to book this venue', 'Authentication Required');
       (navigation as any).navigate('SignIn');
       return;
     }
 
-    // Proceed to booking — pass already-fetched loyalty data to avoid re-fetching
+    const isVenueOwner = Boolean(user.id && venue.owner_id === user.id);
+
     (navigation as any).navigate('Booking', {
       venue,
-      loyaltyTier: loyaltyStatus?.currentTier || null,
-      loyaltyBookings: loyaltyStatus?.completedBookings || 0,
+      loyaltyTier: isVenueOwner ? null : loyaltyStatus?.currentTier || null,
+      loyaltyBookings: isVenueOwner ? 0 : loyaltyStatus?.completedBookings || 0,
+      isOwnerBooking: isVenueOwner,
     });
   };
 
@@ -169,6 +170,7 @@ export default function VenueDetailScreen() {
   }
 
   const averageRating = calculateAverageRating();
+  const isVenueOwner = Boolean(user?.id && venue.owner_id === user.id);
 
   return (
     <View style={styles.container}>
@@ -257,6 +259,12 @@ export default function VenueDetailScreen() {
             <View style={styles.tagsRow}>
               <View style={styles.tag}>
                 <Text style={styles.tagText}>{venue.sport_type.toUpperCase()}</Text>
+              </View>
+              <View style={[styles.tag, styles.courtsTag]}>
+                <Ionicons name="grid-outline" size={12} color={COLORS.secondary} />
+                <Text style={styles.courtsTagText}>
+                  {venue.number_of_courts ?? 1} {(venue.number_of_courts ?? 1) === 1 ? 'Court' : 'Courts'}
+                </Text>
               </View>
               <View style={[styles.tag, styles.priceTag]}>
                 <Text style={styles.priceTagText}>PKR {venue.price_per_hour}/hr</Text>
@@ -539,22 +547,32 @@ export default function VenueDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Floating Booking Button - hidden for venue owner */}
-      {!(user && venue.owner_id === user.id) && (
-        <View style={styles.floatingFooter}>
-          <View style={styles.footerPrice}>
-            <Text style={styles.footerPriceLabel}>Price starts from</Text>
-            <Text style={styles.footerPriceValue}>PKR {venue.price_per_hour}<Text style={styles.footerPriceUnit}>/hr</Text></Text>
-          </View>
-          <TouchableOpacity
-            style={styles.footerButton}
-            onPress={handleBookNow}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.footerButtonText}>Book Now</Text>
-          </TouchableOpacity>
+      {/* Booking footer — players book via WhatsApp; owners book for customers */}
+      <View style={styles.floatingFooter}>
+        <View style={styles.footerPrice}>
+          <Text style={styles.footerPriceLabel}>
+            {isVenueOwner ? 'Walk-in booking' : 'Price starts from'}
+          </Text>
+          <Text style={styles.footerPriceValue}>
+            PKR {venue.price_per_hour}<Text style={styles.footerPriceUnit}>/hr</Text>
+          </Text>
         </View>
-      )}
+        <TouchableOpacity
+          style={[styles.footerButton, isVenueOwner && styles.footerButtonOwner]}
+          onPress={handleBookNow}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name={isVenueOwner ? 'person-add-outline' : 'calendar-outline'}
+            size={18}
+            color="#FFF"
+            style={{ marginRight: 6 }}
+          />
+          <Text style={styles.footerButtonText}>
+            {isVenueOwner ? 'Book for Customer' : 'Book Now'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -712,6 +730,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  courtsTag: {
+    backgroundColor: COLORS.secondary + '12',
+  },
+  courtsTagText: {
+    color: COLORS.secondary,
+    fontWeight: '700',
+    fontSize: 12,
   },
   tagText: {
     color: COLORS.primary,
@@ -894,10 +923,16 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
   footerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 32,
+    paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 12,
+  },
+  footerButtonOwner: {
+    backgroundColor: COLORS.secondary,
   },
   footerButtonText: {
     color: '#FFF',

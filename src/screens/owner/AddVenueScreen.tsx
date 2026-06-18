@@ -42,6 +42,7 @@ export default function AddVenueScreen() {
     subArea: '',
     address: '',
     pricePerHour: '',
+    numberOfCourts: '1',
     phone: '',
     openingTime: '08:00',
     closingTime: '22:00',
@@ -137,6 +138,10 @@ export default function AddVenueScreen() {
     } else if (currentStep === 2) {
       if (!formData.pricePerHour || parseFloat(formData.pricePerHour) <= 0) {
         newErrors.pricePerHour = 'Required';
+      }
+      const courts = parseInt(formData.numberOfCourts, 10);
+      if (!Number.isFinite(courts) || courts < 1) {
+        newErrors.numberOfCourts = 'Enter at least 1 court';
       }
       if (!formData.phone.trim()) newErrors.phone = 'Required';
       if (!formData.is24_7 && (!formData.openingTime || !formData.closingTime)) {
@@ -457,6 +462,7 @@ export default function AddVenueScreen() {
           description: formData.description || null,
           amenities: formData.amenities.length > 0 ? formData.amenities : null,
           price_per_hour: parseFloat(formData.pricePerHour),
+          number_of_courts: parseInt(formData.numberOfCourts, 10) || 1,
           opening_time: formData.is24_7 ? null : formData.openingTime,
           closing_time: formData.is24_7 ? null : formData.closingTime,
           is_24_7: formData.is24_7,
@@ -752,7 +758,17 @@ export default function AddVenueScreen() {
               placeholderTextColor={COLORS.placeholder}
             />
 
-            <Text style={styles.helperText}>Default price when no special rates apply</Text>
+            <Input
+              label="Number of Courts *"
+              placeholder="e.g., 2"
+              value={formData.numberOfCourts}
+              onChangeText={(text) => updateFormData('numberOfCourts', text.replace(/[^0-9]/g, ''))}
+              keyboardType="number-pad"
+              error={errors.numberOfCourts}
+              placeholderTextColor={COLORS.placeholder}
+            />
+
+            <Text style={styles.helperText}>Total playable courts or fields at this venue</Text>
 
             <Input
               label="WhatsApp Number *"

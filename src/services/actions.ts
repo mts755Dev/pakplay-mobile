@@ -4,6 +4,13 @@
 
 import { supabase } from '../config/supabase';
 import { Tables } from '../types/supabase';
+import { bookingToInterval, getCourtAvailability } from '../lib/court-availability';
+import {
+  formatLocalDateKey,
+  isBookingEndTimePassed,
+  isBookingStartTimePassed,
+  normalizeBookingDateKey,
+} from '../lib/booking-status';
 
 type Venue = Tables<'venues'>;
 type VenuePhoto = Tables<'venue_photos'>;
@@ -786,7 +793,9 @@ export async function fetchOwnerAnalytics(userId: string) {
         venues: [],
         totalBookings: 0,
         totalRevenue: 0,
-        recentBookings: []
+        revenueThisMonth: 0,
+        monthLabel: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        recentBookings: [],
       };
     }
 
@@ -827,7 +836,11 @@ export async function fetchOwnerAnalytics(userId: string) {
     // Actually, to save a network call, we can just calculate revenue 
     // considering expired confirmed as completed and ignoring expired pending.
     let totalRevenue = 0;
+    let revenueThisMonth = 0;
     let actualTotalBookings = 0;
+    const now = new Date();
+    const monthStart = formatLocalDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
+    const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
     // Calculate per-venue stats
     const venueStats: Record<string, { bookings: number, revenue: number }> = {};
@@ -836,38 +849,37 @@ export async function fetchOwnerAnalytics(userId: string) {
     });
 
     if (allBookings) {
-      const now = new Date();
-      
       allBookings.forEach(booking => {
         const vId = booking.venue_id;
         if (!venueStats[vId]) return;
 
         let effectiveStatus = booking.status;
         
-        // Determine effective status
         if (booking.status === 'pending') {
-          try {
-            if (new Date(`${booking.booking_date}T${booking.start_time}`) < now) {
-              effectiveStatus = 'expired'; // Will be deleted, so ignore
-            }
-          } catch (e) {}
+          if (isBookingStartTimePassed(booking.booking_date, booking.start_time)) {
+            effectiveStatus = 'expired';
+          }
         } else if (booking.status === 'confirmed') {
-          try {
-            if (new Date(`${booking.booking_date}T${booking.end_time}`) < now) {
-              effectiveStatus = 'completed';
-            }
-          } catch (e) {}
+          if (isBookingEndTimePassed(booking.booking_date, booking.end_time)) {
+            effectiveStatus = 'completed';
+          }
         }
 
         if (effectiveStatus !== 'expired' && effectiveStatus !== 'cancelled') {
           venueStats[vId].bookings += 1;
           actualTotalBookings += 1;
           
-          // Only add to revenue if the booking is confirmed or completed
           if (effectiveStatus === 'confirmed' || effectiveStatus === 'completed') {
             const amount = booking.total_price || 0;
             venueStats[vId].revenue += amount;
             totalRevenue += amount;
+
+            if (
+              effectiveStatus === 'completed' &&
+              normalizeBookingDateKey(booking.booking_date) >= monthStart
+            ) {
+              revenueThisMonth += amount;
+            }
           }
         }
       });
@@ -893,6 +905,8 @@ export async function fetchOwnerAnalytics(userId: string) {
       venues: enrichedVenues,
       totalBookings: actualTotalBookings,
       totalRevenue,
+      revenueThisMonth,
+      monthLabel,
       recentBookings: enrichedRecentBookings
     };
   } catch (error) {
@@ -901,6 +915,8 @@ export async function fetchOwnerAnalytics(userId: string) {
       venues: [],
       totalBookings: 0,
       totalRevenue: 0,
+      revenueThisMonth: 0,
+      monthLabel: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
       recentBookings: []
     };
   }
@@ -908,46 +924,208 @@ export async function fetchOwnerAnalytics(userId: string) {
 
 // ==================== BOOKING ACTIONS ====================
 
+const BOOKING_CAPACITY_STATUSES = ['pending', 'confirmed'] as const;
+
+export type VenueDayBooking = {
+  start_time: string;
+  end_time: string;
+};
+
 /**
- * Auto-update booking statuses:
+ * Bookings that consume court capacity for a venue on a given date.
+ */
+export async function fetchVenueBookingsForDate(venueId: string, bookingDate: string) {
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('start_time, end_time, status')
+      .eq('venue_id', venueId)
+      .eq('booking_date', bookingDate)
+      .in('status', [...BOOKING_CAPACITY_STATUSES]);
+
+    if (error) {
+      return { bookings: [] as VenueDayBooking[], error: error.message };
+    }
+
+    const bookings = (data || []).map((row) => ({
+      start_time: row.start_time,
+      end_time: row.end_time,
+    }));
+
+    return { bookings, error: null };
+  } catch (error: any) {
+    console.error('Error fetching venue bookings for date:', error);
+    return { bookings: [] as VenueDayBooking[], error: error.message || 'Failed to fetch bookings' };
+  }
+}
+
+export async function checkCourtAvailability(
+  venueId: string,
+  bookingDate: string,
+  startTime: string,
+  endTime: string
+) {
+  try {
+    const { data: venue, error: venueError } = await supabase
+      .from('venues')
+      .select('number_of_courts')
+      .eq('id', venueId)
+      .maybeSingle();
+
+    if (venueError || !venue) {
+      return {
+        available: false,
+        availableCourts: 0,
+        bookedCourts: 0,
+        totalCourts: 1,
+        error: 'Venue not found',
+      };
+    }
+
+    const { bookings, error: bookingsError } = await fetchVenueBookingsForDate(venueId, bookingDate);
+    if (bookingsError) {
+      return {
+        available: false,
+        availableCourts: 0,
+        bookedCourts: 0,
+        totalCourts: venue.number_of_courts ?? 1,
+        error: bookingsError,
+      };
+    }
+
+    const intervals = bookings.map((b) => bookingToInterval(b.start_time, b.end_time));
+    const availability = getCourtAvailability(
+      venue.number_of_courts ?? 1,
+      intervals,
+      startTime,
+      endTime
+    );
+
+    return { ...availability, error: null };
+  } catch (error: any) {
+    console.error('Error checking court availability:', error);
+    return {
+      available: false,
+      availableCourts: 0,
+      bookedCourts: 0,
+      totalCourts: 1,
+      error: error.message || 'Failed to check availability',
+    };
+  }
+}
+
+/**
+ * Auto-update booking statuses (client-side with RLS):
  * - Mark expired confirmed bookings as completed
  * - Delete expired pending bookings
  */
 export async function autoUpdateBookingStatuses(bookings: any[]) {
   if (!bookings || bookings.length === 0) return false;
-  
-  const now = new Date();
+
   let hasUpdates = false;
-  
-  const expiredPending = bookings.filter(b => {
-    if (b.status !== 'pending') return false;
-    try {
-      return new Date(`${b.booking_date}T${b.start_time}`) < now;
-    } catch { return false; }
-  });
-  
-  const expiredConfirmed = bookings.filter(b => {
-    if (b.status !== 'confirmed') return false;
-    try {
-      return new Date(`${b.booking_date}T${b.end_time}`) < now;
-    } catch { return false; }
-  });
-  
+
+  const expiredPending = bookings.filter(
+    (b) => b.status === 'pending' && isBookingStartTimePassed(b.booking_date, b.start_time)
+  );
+
+  const expiredConfirmed = bookings.filter(
+    (b) => b.status === 'confirmed' && isBookingEndTimePassed(b.booking_date, b.end_time)
+  );
+
   for (const b of expiredPending) {
     try {
       await supabase.from('bookings').delete().eq('id', b.id);
       hasUpdates = true;
-    } catch (e) { console.error('Error auto-deleting pending booking:', e); }
+    } catch (e) {
+      console.error('Error auto-deleting pending booking:', e);
+    }
   }
-  
+
   for (const b of expiredConfirmed) {
     try {
       await supabase.from('bookings').update({ status: 'completed' }).eq('id', b.id);
       hasUpdates = true;
-    } catch (e) { console.error('Error auto-completing confirmed booking:', e); }
+    } catch (e) {
+      console.error('Error auto-completing confirmed booking:', e);
+    }
   }
-  
+
   return hasUpdates;
+}
+
+/**
+ * Cleanup user bookings with email verification (matches web behavior).
+ */
+export async function cleanupUserBookings(
+  userEmail: string,
+  expiredIds: string[],
+  completeIds: string[]
+) {
+  try {
+    if (expiredIds.length === 0 && completeIds.length === 0) {
+      return { success: true, error: null };
+    }
+
+    const allIds = [...expiredIds, ...completeIds];
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('id, player_email')
+      .in('id', allIds);
+
+    const ownedIds = new Set(
+      (bookings || [])
+        .filter((b) => b.player_email?.toLowerCase() === userEmail.trim().toLowerCase())
+        .map((b) => b.id)
+    );
+
+    const safeExpired = expiredIds.filter((id) => ownedIds.has(id));
+    const safeComplete = completeIds.filter((id) => ownedIds.has(id));
+
+    if (safeExpired.length > 0) {
+      await supabase.from('bookings').delete().in('id', safeExpired);
+    }
+
+    if (safeComplete.length > 0) {
+      await supabase
+        .from('bookings')
+        .update({ status: 'completed' })
+        .in('id', safeComplete);
+    }
+
+    return { success: true, error: null };
+  } catch (error: any) {
+    console.error('Error cleaning up user bookings:', error);
+    return { success: false, error: error.message || 'Failed to clean up bookings' };
+  }
+}
+
+export async function cancelUserBooking(bookingId: string, userEmail: string) {
+  try {
+    const { data: booking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('id, player_email')
+      .eq('id', bookingId)
+      .maybeSingle();
+
+    if (fetchError || !booking) {
+      return { success: false, error: 'Booking not found' };
+    }
+
+    if (booking.player_email?.toLowerCase() !== userEmail.trim().toLowerCase()) {
+      return { success: false, error: 'Not authorized to cancel this booking' };
+    }
+
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelled' })
+      .eq('id', bookingId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, error: null };
+  } catch (error: any) {
+    console.error('Error cancelling booking:', error);
+    return { success: false, error: error.message || 'Failed to cancel booking' };
+  }
 }
 
 export interface CreateBookingData {
@@ -961,18 +1139,64 @@ export interface CreateBookingData {
   player_email: string;
   notes?: string;
   total_price: number;
+  discount_type?: 'offer' | 'loyalty' | null;
+  discount_label?: string | null;
+  owner_user_id?: string | null;
 }
 
 /**
- * Create a new booking
+ * Create a new booking with court-capacity validation.
  */
 export async function createBooking(bookingData: CreateBookingData) {
   try {
+    const availability = await checkCourtAvailability(
+      bookingData.venue_id,
+      bookingData.booking_date,
+      bookingData.start_time,
+      bookingData.end_time
+    );
+
+    if (availability.error) {
+      return { data: null, error: availability.error };
+    }
+
+    if (!availability.available) {
+      return {
+        data: null,
+        error: 'No courts available for the selected time. Please choose a different time.',
+      };
+    }
+
+    let status: 'pending' | 'confirmed' = 'pending';
+
+    if (bookingData.owner_user_id) {
+      const { data: venue } = await supabase
+        .from('venues')
+        .select('owner_id')
+        .eq('id', bookingData.venue_id)
+        .maybeSingle();
+
+      if (venue?.owner_id === bookingData.owner_user_id) {
+        status = 'confirmed';
+      }
+    }
+
     const { data, error } = await supabase
       .from('bookings')
       .insert({
-        ...bookingData,
-        status: 'pending',
+        venue_id: bookingData.venue_id,
+        booking_date: bookingData.booking_date,
+        start_time: bookingData.start_time,
+        end_time: bookingData.end_time,
+        total_hours: bookingData.total_hours,
+        player_name: bookingData.player_name,
+        player_phone: bookingData.player_phone,
+        player_email: bookingData.player_email,
+        notes: bookingData.notes || null,
+        total_price: bookingData.total_price,
+        discount_type: bookingData.discount_type || null,
+        discount_label: bookingData.discount_label || null,
+        status,
       })
       .select()
       .single();
@@ -1180,6 +1404,7 @@ export interface UpdateVenueData {
   description?: string;
   amenities?: string[];
   price_per_hour?: number;
+  number_of_courts?: number;
   opening_time?: string;
   closing_time?: string;
   is_24_7?: boolean;

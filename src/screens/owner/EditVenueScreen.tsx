@@ -243,6 +243,7 @@ export default function EditVenueScreen() {
     subArea: '',
     address: '',
     pricePerHour: '',
+    numberOfCourts: '1',
     phone: '',
     openingTime: '08:00',
     closingTime: '22:00',
@@ -396,6 +397,7 @@ export default function EditVenueScreen() {
         subArea: venueData.sub_area || '',
         address: venueData.address || '',
         pricePerHour: venueData.price_per_hour?.toString() || '',
+        numberOfCourts: venueData.number_of_courts?.toString() || '1',
         phone: venueData.whatsapp_number || '',
         openingTime: venueData.opening_time || '08:00',
         closingTime: venueData.closing_time || '22:00',
@@ -544,6 +546,12 @@ export default function EditVenueScreen() {
       return;
     }
 
+    const numberOfCourts = parseInt(formData.numberOfCourts, 10);
+    if (!Number.isFinite(numberOfCourts) || numberOfCourts < 1) {
+      showToast.error('Please enter at least 1 court', 'Validation Error');
+      return;
+    }
+
     const remainingPhotos = existingPhotos.length - photosToDelete.length + newPhotos.length;
     if (remainingPhotos < 1) {
       showToast.error('Please keep at least 1 photo', 'Validation Error');
@@ -582,6 +590,7 @@ export default function EditVenueScreen() {
         city: normalizedCity,
         address: formData.address,
         price_per_hour: parseFloat(formData.pricePerHour),
+        number_of_courts: numberOfCourts,
         is_24_7: formData.is24_7,
         whatsapp_number: formData.phone,
       };
@@ -986,6 +995,15 @@ export default function EditVenueScreen() {
             value={formData.pricePerHour}
             onChangeText={(text) => updateFormData('pricePerHour', text)}
             keyboardType="numeric"
+            placeholderTextColor={COLORS.placeholder}
+          />
+
+          <Input
+            label="Number of Courts *"
+            placeholder="e.g., 2"
+            value={formData.numberOfCourts}
+            onChangeText={(text) => updateFormData('numberOfCourts', text.replace(/[^0-9]/g, ''))}
+            keyboardType="number-pad"
             placeholderTextColor={COLORS.placeholder}
           />
 

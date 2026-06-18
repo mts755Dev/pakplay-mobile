@@ -18,7 +18,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZES, FONT_WEIGHTS, BORDER_RADIUS, SHADOWS } from '../../constants/theme';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../config/supabase';
-import { autoUpdateBookingStatuses } from '../../services/actions';
+import { cleanupUserBookings, cancelUserBooking } from '../../services/actions';
+import {
+  isBookingEndTimePassed,
+  isBookingStartTimePassed,
+} from '../../lib/booking-status';
 import { showToast } from '../../utils/toast';
 
 const { width } = Dimensions.get('window');
@@ -103,44 +107,7 @@ export default function UserBookingsScreen() {
 
       if (error) throw error;
 
-      // Auto update statuses (mark expired confirmed as completed, delete expired pending)
-      const hasUpdates = await autoUpdateBookingStatuses(data || []);
-      
-      // If there were updates, fetch again to get the latest data
-      let finalData = data;
-      if (hasUpdates) {
-        const { data: updatedData, error: updatedError } = await supabase
-          .from('bookings')
-          .select(`
-            id,
-            booking_date,
-            start_time,
-            end_time,
-            status,
-            total_price,
-            total_hours,
-            player_name,
-            player_email,
-            player_phone,
-            created_at,
-            venues (
-              name,
-              venue_photos (
-                photo_url,
-                display_order
-              )
-            )
-          `)
-          .eq('player_email', user.email)
-          .order('booking_date', { ascending: false })
-          .order('start_time', { ascending: false });
-          
-        if (!updatedError) {
-          finalData = updatedData;
-        }
-      }
-
-      const formattedBookings: Booking[] = (finalData || []).map((booking: any) => {
+      const formattedBookings: Booking[] = (data || []).map((booking: any) => {
         const photos = booking.venues?.venue_photos || [];
         const sortedPhotos = photos.sort((a: any, b: any) => a.display_order - b.display_order);
         const firstPhoto = sortedPhotos[0]?.photo_url || null;
@@ -162,7 +129,30 @@ export default function UserBookingsScreen() {
         };
       });
 
-      setBookings(formattedBookings);
+      const updatedBookings = formattedBookings.map((booking) => {
+        if (booking.status === 'confirmed' && isBookingEndTimePassed(booking.booking_date, booking.end_time)) {
+          return { ...booking, status: 'completed' as const };
+        }
+        return booking;
+      });
+
+      const nonExpiredBookings = updatedBookings.filter((booking) => {
+        return !(booking.status === 'pending' && isBookingStartTimePassed(booking.booking_date, booking.start_time));
+      });
+
+      setBookings(nonExpiredBookings);
+
+      if (formattedBookings.length > 0 && user.email) {
+        const bookingsToComplete = formattedBookings
+          .filter((b) => b.status === 'confirmed' && isBookingEndTimePassed(b.booking_date, b.end_time))
+          .map((b) => b.id);
+
+        const expiredBookingIds = formattedBookings
+          .filter((b) => b.status === 'pending' && isBookingStartTimePassed(b.booking_date, b.start_time))
+          .map((b) => b.id);
+
+        cleanupUserBookings(user.email, expiredBookingIds, bookingsToComplete).catch(() => {});
+      }
     } catch (error: any) {
       console.error('Error fetching bookings:', error);
     } finally {
@@ -195,20 +185,19 @@ export default function UserBookingsScreen() {
   };
 
   const confirmCancelBooking = async (bookingId: string) => {
+    if (!user?.email) {
+      showToast.error('You must be signed in to cancel bookings', 'Error');
+      return;
+    }
+
     setCancellingId(bookingId);
-    
+
     try {
-      // Update booking status to cancelled
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status: 'cancelled' })
-        .eq('id', bookingId);
+      const result = await cancelUserBooking(bookingId, user.email);
+      if (!result.success) throw new Error(result.error || 'Failed to cancel booking');
 
-      if (error) throw error;
-
-      // Update local state
-      setBookings(prev => 
-        prev.map(b => 
+      setBookings((prev) =>
+        prev.map((b) =>
           b.id === bookingId ? { ...b, status: 'cancelled' as const } : b
         )
       );
@@ -227,29 +216,22 @@ export default function UserBookingsScreen() {
   }, [user]);
 
   const getFilteredBookings = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     return bookings.filter((booking) => {
-      const bookingDate = new Date(booking.booking_date);
-      bookingDate.setHours(0, 0, 0, 0);
+      const hasEnded = isBookingEndTimePassed(booking.booking_date, booking.end_time);
 
       if (filter === 'upcoming') {
-        return bookingDate >= today && booking.status !== 'cancelled';
+        return !hasEnded && booking.status !== 'cancelled' && booking.status !== 'completed';
       } else if (filter === 'past') {
-        return bookingDate < today || booking.status === 'completed';
+        return hasEnded || booking.status === 'cancelled' || booking.status === 'completed';
       }
       return true;
     });
   };
 
   const getUpcomingCount = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return bookings.filter(b => {
-      const d = new Date(b.booking_date);
-      d.setHours(0, 0, 0, 0);
-      return d >= today && b.status !== 'cancelled';
+    return bookings.filter((b) => {
+      const hasEnded = isBookingEndTimePassed(b.booking_date, b.end_time);
+      return !hasEnded && b.status !== 'cancelled' && b.status !== 'completed';
     }).length;
   };
 
@@ -271,12 +253,9 @@ export default function UserBookingsScreen() {
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
-  const isUpcoming = (dateString: string) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const bookingDate = new Date(dateString);
-    bookingDate.setHours(0, 0, 0, 0);
-    return bookingDate >= today;
+  const isUpcoming = (booking: Booking) => {
+    const hasEnded = isBookingEndTimePassed(booking.booking_date, booking.end_time);
+    return !hasEnded && booking.status !== 'cancelled' && booking.status !== 'completed';
   };
 
   const filteredBookings = getFilteredBookings();
@@ -291,7 +270,7 @@ export default function UserBookingsScreen() {
   const renderBookingCard = ({ item, index }: { item: Booking; index: number }) => {
     const date = formatDate(item.booking_date);
     const statusColor = getStatusColor(item.status);
-    const upcoming = isUpcoming(item.booking_date);
+    const upcoming = isUpcoming(item);
 
     return (
       <View style={styles.bookingCard}>

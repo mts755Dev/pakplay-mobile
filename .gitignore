@@ -37,6 +37,9 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
+# Local asset generation tools
+.asset-tools/
+
 # Expo
 .expo/
 dist/
@@ -45,6 +48,9 @@ web-build/
 # Environment
 .env
 .env.local
+
+# Play Store submit (never commit)
+google-service-account.json
 
 # Metro
 .metro-health-check*

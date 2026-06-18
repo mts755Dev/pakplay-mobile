@@ -8,16 +8,18 @@ import RootNavigator from './src/navigation/RootNavigator';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { QueryProvider } from './src/contexts/QueryProvider';
 import { toastConfig } from './src/config/toastConfig';
+import { isSupabaseConfigured } from './src/config/supabase';
+import ConfigErrorScreen from './src/components/ConfigErrorScreen';
 import SplashScreen from './src/screens/SplashScreen';
 
-// Prevent the native splash screen from auto-hiding
 ExpoSplashScreen.preventAutoHideAsync();
 
 function AppContent() {
   const { loading } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
+  const [forceReady, setForceReady] = useState(false);
 
-  // Hide the native splash screen after a brief delay to ensure custom splash has rendered
+  // Hide native splash as soon as the animated splash has mounted
   useEffect(() => {
     const timer = setTimeout(() => {
       ExpoSplashScreen.hideAsync();
@@ -25,15 +27,23 @@ function AppContent() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Never block launch indefinitely if auth restore stalls in production builds
+  useEffect(() => {
+    const timer = setTimeout(() => setForceReady(true), 7000);
+    return () => clearTimeout(timer);
+  }, []);
+
   const handleSplashFinish = useCallback(() => {
     setShowSplash(false);
   }, []);
 
+  const isAppReady = !loading || forceReady;
+
   if (showSplash) {
     return (
-      <SplashScreen 
-        onFinish={handleSplashFinish} 
-        isAppReady={!loading} 
+      <SplashScreen
+        onFinish={handleSplashFinish}
+        isAppReady={isAppReady}
       />
     );
   }
@@ -47,6 +57,10 @@ function AppContent() {
 }
 
 export default function App() {
+  if (!isSupabaseConfigured) {
+    return <ConfigErrorScreen />;
+  }
+
   return (
     <QueryProvider>
       <SafeAreaProvider>

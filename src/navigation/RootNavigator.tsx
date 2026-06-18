@@ -35,7 +35,7 @@ export type RootStackParamList = {
   MainTabs: undefined;
   OwnerTabs: undefined;
   VenueDetail: { venueId: string; slug: string };
-  Booking: { venue: any; loyaltyTier?: any; loyaltyBookings?: number };
+  Booking: { venue: any; loyaltyTier?: any; loyaltyBookings?: number; isOwnerBooking?: boolean };
   Profile: undefined;
   AddVenue: undefined;
   EditVenue: { venueId: string };
@@ -51,29 +51,23 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+function roleFromMetadata(user: { user_metadata?: Record<string, unknown> }): string | null {
+  const role = user.user_metadata?.role;
+  return role === 'venue_owner' || role === 'player' ? role : null;
+}
+
 export default function RootNavigator() {
   const { user, userRole, loading } = useAuth();
 
-  // Debug logging
-  console.log('[RootNavigator] State:', { 
-    hasUser: !!user, 
-    userRole, 
-    loading 
-  });
+  const resolvedRole = userRole || (user ? roleFromMetadata(user) : null);
 
   if (loading) {
-    console.log('[RootNavigator] Showing loading screen');
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
-
-  console.log('[RootNavigator] Navigation decision:', {
-    isOwner: user && userRole === 'venue_owner',
-    screen: user && userRole === 'venue_owner' ? 'OwnerTabs' : 'MainTabs'
-  });
 
   // App is OPEN for all users - authentication only needed for venue owners
   return (
@@ -88,7 +82,7 @@ export default function RootNavigator() {
         },
       }}
     >
-      {user && userRole === 'venue_owner' ? (
+      {user && resolvedRole === 'venue_owner' ? (
         // Venue Owner Flow
         <>
           <Stack.Screen 

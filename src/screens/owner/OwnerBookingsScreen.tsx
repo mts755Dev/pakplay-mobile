@@ -7,15 +7,29 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
-  Alert,
   Modal,
   Dimensions,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import Header from '../../components/Header';
 import { COLORS, SPACING, BORDER_RADIUS } from '../../constants/theme';
 import { fetchOwnerBookings, confirmBooking, deleteBooking, autoUpdateBookingStatuses } from '../../services/actions';
+import {
+  canOwnerDeleteBooking,
+  countsTowardRevenue,
+  formatBookingDateLabel,
+  getEffectiveBookingStatus,
+  getTodayDateKey,
+  isBookingEffectivelyCompleted,
+  matchesBookingDate,
+  parseDateKey,
+  shiftDateKey,
+  sortBookingsForOwnerDisplay,
+  formatLocalDateKey,
+} from '../../lib/booking-status';
 import { showToast } from '../../utils/toast';
 
 const { width } = Dimensions.get('window');
@@ -26,68 +40,33 @@ export default function OwnerBookingsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [bookings, setBookings] = useState<any[]>([]);
   const [filter, setFilter] = useState<string>('all');
+  const [activeDate, setActiveDate] = useState(getTodayDateKey());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerDate, setPickerDate] = useState(() => parseDateKey(getTodayDateKey()));
   const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
   const [bookingToDelete, setBookingToDelete] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
 
-  // Helper function to check if booking start time has passed
-  const isBookingStartTimePassed = (bookingDate: string, startTime: string): boolean => {
-    try {
-      const now = new Date();
-      const bookingDateTime = new Date(`${bookingDate}T${startTime}`);
-      return bookingDateTime < now;
-    } catch (error) {
-      console.error('Error checking booking time:', error);
-      return false;
-    }
-  };
+  const todayDate = getTodayDateKey();
+  const isToday = activeDate === todayDate;
 
-  // Helper function to check if booking end time has passed
-  const isBookingEndTimePassed = (bookingDate: string, endTime: string): boolean => {
-    try {
-      const now = new Date();
-      const bookingDateTime = new Date(`${bookingDate}T${endTime}`);
-      return bookingDateTime < now;
-    } catch (error) {
-      console.error('Error checking booking time:', error);
-      return false;
-    }
-  };
-
-  // Helper function to get effective status based on time
-  const getEffectiveStatus = (booking: any) => {
-    const startTimePassed = isBookingStartTimePassed(booking.booking_date, booking.start_time);
-    const endTimePassed = isBookingEndTimePassed(booking.booking_date, booking.end_time);
-    
-    // Pending bookings with passed start time should be hidden (expired/auto-deleted)
-    if (booking.status === 'pending' && startTimePassed) {
-      return 'expired';
-    }
-    
-    // Confirmed bookings with passed END time should be treated as completed
-    if (booking.status === 'confirmed' && endTimePassed) {
-      return 'completed';
-    }
-    
-    // Return actual status for all other cases
-    return booking.status;
-  };
-
-  // Filter out expired pending bookings and apply effective status
   const processedBookings = bookings
-    .map(booking => ({
+    .map((booking) => ({
       ...booking,
-      effectiveStatus: getEffectiveStatus(booking),
+      effectiveStatus: getEffectiveBookingStatus(booking),
     }))
-    .filter(booking => booking.effectiveStatus !== 'expired');
+    .filter((booking) => booking.effectiveStatus !== 'expired');
 
-  // Calculate stats with processed bookings
-  const totalBookings = processedBookings.length;
-  const confirmedBookings = processedBookings.filter(b => b.effectiveStatus === 'confirmed').length;
-  const pendingBookings = processedBookings.filter(b => b.effectiveStatus === 'pending').length;
-  const completedBookings = processedBookings.filter(b => b.effectiveStatus === 'completed').length;
-  const totalRevenue = processedBookings
-    .filter(b => b.effectiveStatus === 'confirmed' || b.effectiveStatus === 'completed')
+  const dateBookings = sortBookingsForOwnerDisplay(
+    processedBookings.filter((booking) => matchesBookingDate(booking.booking_date, activeDate))
+  );
+
+  const totalBookings = dateBookings.length;
+  const confirmedBookings = dateBookings.filter((b) => b.effectiveStatus === 'confirmed').length;
+  const pendingBookings = dateBookings.filter((b) => b.effectiveStatus === 'pending').length;
+  const completedBookings = dateBookings.filter((b) => b.effectiveStatus === 'completed').length;
+  const totalRevenue = dateBookings
+    .filter((b) => countsTowardRevenue(b))
     .reduce((sum, b) => sum + (b.total_price || 0), 0);
 
   const filters = [
@@ -109,14 +88,19 @@ export default function OwnerBookingsScreen() {
       
       // Auto-update statuses (mark expired confirmed as completed, delete expired pending)
       const hasUpdates = await autoUpdateBookingStatuses(bookingsData);
-      
+
+      let finalBookings = bookingsData || [];
       if (hasUpdates) {
-        // Fetch bookings again after updates
-        const updatedBookings = await fetchOwnerBookings(user.id);
-        setBookings(updatedBookings || []);
-      } else {
-        setBookings(bookingsData || []);
+        finalBookings = (await fetchOwnerBookings(user.id)) || [];
       }
+
+      setBookings(
+        finalBookings.map((booking: any) =>
+          isBookingEffectivelyCompleted(booking) && booking.status !== 'completed'
+            ? { ...booking, status: 'completed' }
+            : booking
+        )
+      );
     } catch (error) {
       console.error('Error fetching bookings:', error);
     } finally {
@@ -128,6 +112,31 @@ export default function OwnerBookingsScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchBookings();
+  };
+
+  const openDatePicker = () => {
+    setPickerDate(parseDateKey(activeDate));
+    setShowDatePicker(true);
+  };
+
+  const onDatePickerChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+      if (selectedDate && event?.type !== 'dismissed') {
+        setPickerDate(selectedDate);
+        setActiveDate(formatLocalDateKey(selectedDate));
+      }
+      return;
+    }
+
+    if (selectedDate) {
+      setPickerDate(selectedDate);
+    }
+  };
+
+  const applyPickerDate = () => {
+    setActiveDate(formatLocalDateKey(pickerDate));
+    setShowDatePicker(false);
   };
 
   const handleConfirm = async (bookingId: string) => {
@@ -175,6 +184,8 @@ export default function OwnerBookingsScreen() {
         return COLORS.error;
       case 'completed':
         return COLORS.secondary;
+      case 'expired':
+        return COLORS.textMuted;
       default:
         return COLORS.textMuted;
     }
@@ -196,8 +207,8 @@ export default function OwnerBookingsScreen() {
   };
 
   const filteredBookings = filter === 'all'
-    ? processedBookings
-    : processedBookings.filter(b => b.effectiveStatus === filter);
+    ? dateBookings
+    : dateBookings.filter((b) => b.effectiveStatus === filter);
 
   if (loading) {
     return (
@@ -249,6 +260,88 @@ export default function OwnerBookingsScreen() {
           </View>
         </View>
 
+        {/* Date Filter */}
+        <View style={styles.dateFilterSection}>
+          <View style={styles.dateFilterHeader}>
+            <Text style={styles.dateFilterLabel}>Select date</Text>
+            {!isToday && (
+              <TouchableOpacity
+                onPress={() => setActiveDate(todayDate)}
+                activeOpacity={0.7}
+                style={styles.todayChip}
+              >
+                <Text style={styles.todayChipText}>Today</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.dateFilterRow}>
+            <TouchableOpacity
+              style={styles.dateNavBtn}
+              onPress={() => setActiveDate(shiftDateKey(activeDate, -1))}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-back" size={20} color={COLORS.text} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dateDisplayBtn}
+              onPress={openDatePicker}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="calendar-outline" size={18} color={COLORS.primary} />
+              <View style={styles.dateDisplayTextWrap}>
+                <Text style={styles.dateDisplayText}>{formatBookingDateLabel(activeDate)}</Text>
+                <Text style={styles.dateTodayHint}>Tap to open calendar</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dateNavBtn}
+              onPress={() => setActiveDate(shiftDateKey(activeDate, 1))}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-forward" size={20} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {showDatePicker && (
+          Platform.OS === 'ios' ? (
+            <Modal transparent animationType="slide" visible={showDatePicker}>
+              <View style={styles.pickerModalOverlay}>
+                <View style={styles.pickerModalContent}>
+                  <View style={styles.pickerModalHeader}>
+                    <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                      <Text style={styles.pickerModalCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.pickerModalTitle}>Select Date</Text>
+                    <TouchableOpacity onPress={applyPickerDate}>
+                      <Text style={styles.pickerModalDoneText}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={{ backgroundColor: COLORS.surface }}>
+                    <DateTimePicker
+                      value={pickerDate}
+                      mode="date"
+                      display="spinner"
+                      onChange={onDatePickerChange}
+                      style={{ width: '100%', height: 220 }}
+                      textColor={COLORS.text}
+                    />
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          ) : (
+            <DateTimePicker
+              value={pickerDate}
+              mode="date"
+              display="default"
+              onChange={onDatePickerChange}
+            />
+          )
+        )}
+
         {/* Filter Tabs */}
         <View style={styles.filterContainer}>
           <ScrollView
@@ -296,8 +389,14 @@ export default function OwnerBookingsScreen() {
               <View style={[styles.emptyIconWrapper, { backgroundColor: COLORS.textMuted + '10' }]}>
                 <Ionicons name="filter-outline" size={48} color={COLORS.textMuted} />
               </View>
-              <Text style={styles.emptyTitle}>No {filter} bookings</Text>
-              <Text style={styles.emptyText}>Try selecting a different filter</Text>
+              <Text style={styles.emptyTitle}>
+                {filter === 'all' ? 'No bookings on this date' : `No ${filter} bookings`}
+              </Text>
+              <Text style={styles.emptyText}>
+                {filter === 'all'
+                  ? 'Try selecting a different date'
+                  : 'Try selecting a different filter'}
+              </Text>
             </View>
           ) : (
             filteredBookings.map((booking) => (
@@ -391,8 +490,13 @@ export default function OwnerBookingsScreen() {
                           setBookingToDelete(booking.id);
                           setDeleteDialogVisible(true);
                         }}
+                        disabled={!canOwnerDeleteBooking(booking)}
                       >
-                        <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                        <Ionicons
+                          name="trash-outline"
+                          size={18}
+                          color={canOwnerDeleteBooking(booking) ? COLORS.error : COLORS.textMuted}
+                        />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -516,6 +620,111 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 18,
     fontWeight: '800',
+  },
+
+  // Date Filter
+  dateFilterSection: {
+    paddingHorizontal: SPACING.lg,
+    marginBottom: SPACING.md,
+  },
+  dateFilterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
+  },
+  dateFilterLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  todayChip: {
+    backgroundColor: COLORS.primary + '15',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: BORDER_RADIUS.full,
+  },
+  todayChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  dateFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  dateNavBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateDisplayBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    minHeight: 48,
+  },
+  dateDisplayTextWrap: {
+    flex: 1,
+  },
+  dateDisplayText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  dateTodayHint: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  pickerModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  pickerModalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 0,
+  },
+  pickerModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  pickerModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  pickerModalCancelText: {
+    fontSize: 16,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  pickerModalDoneText: {
+    fontSize: 16,
+    color: COLORS.primary,
+    fontWeight: '700',
   },
 
   // Filter Tabs

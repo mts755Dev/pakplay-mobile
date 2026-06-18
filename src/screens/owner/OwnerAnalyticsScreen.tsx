@@ -22,6 +22,8 @@ interface AnalyticsData {
   venues: any[];
   totalBookings: number;
   totalRevenue: number;
+  revenueThisMonth: number;
+  monthLabel: string;
   recentBookings: any[];
 }
 
@@ -34,6 +36,8 @@ export default function OwnerAnalyticsScreen() {
     venues: [],
     totalBookings: 0,
     totalRevenue: 0,
+    revenueThisMonth: 0,
+    monthLabel: '',
     recentBookings: [],
   });
 
@@ -62,9 +66,7 @@ export default function OwnerAnalyticsScreen() {
 
   const totalVenues = analytics.venues.length;
   const approvedVenues = analytics.venues.filter(v => v.status === 'approved').length;
-  const avgRevenuePerVenue = totalVenues > 0 
-    ? Math.round(analytics.totalRevenue / totalVenues) 
-    : 0;
+  const revenueThisMonth = analytics.revenueThisMonth ?? 0;
 
   if (loading) {
     return (
@@ -153,19 +155,21 @@ export default function OwnerAnalyticsScreen() {
               </View>
             </View>
 
-            {/* Avg Per Venue */}
+            {/* Revenue This Month */}
             <View style={styles.statCard}>
               <View style={[styles.statIcon, { backgroundColor: '#8B5CF6' + '15' }]}>
                 <Ionicons name="trending-up" size={22} color="#8B5CF6" />
               </View>
               <Text style={[styles.statValue, { color: '#8B5CF6' }]}>
-                {avgRevenuePerVenue >= 1000 
-                  ? `${(avgRevenuePerVenue / 1000).toFixed(0)}k` 
-                  : avgRevenuePerVenue}
+                {revenueThisMonth >= 1000
+                  ? `${(revenueThisMonth / 1000).toFixed(0)}k`
+                  : revenueThisMonth}
               </Text>
-              <Text style={styles.statLabel}>Avg/Venue</Text>
+              <Text style={styles.statLabel}>Revenue This Month</Text>
               <View style={[styles.statBadge, { backgroundColor: '#8B5CF6' + '15' }]}>
-                <Text style={[styles.statBadgeText, { color: '#8B5CF6' }]}>PKR</Text>
+                <Text style={[styles.statBadgeText, { color: '#8B5CF6' }]}>
+                  {analytics.monthLabel || 'PKR'}
+                </Text>
               </View>
             </View>
           </View>

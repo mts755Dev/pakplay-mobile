@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,7 +23,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'SignIn'>;
 
 export default function SignInScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { signIn } = useAuth();
+  const { signIn, user, userRole } = useAuth();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,6 +31,23 @@ export default function SignInScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({ email: '', password: '' });
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const metaRole = user.user_metadata?.role;
+    const role =
+      userRole ||
+      (metaRole === 'venue_owner' || metaRole === 'player' ? metaRole : null);
+
+    if (!role) return;
+
+    const target = role === 'venue_owner' ? 'OwnerTabs' : 'MainTabs';
+    navigation.reset({
+      index: 0,
+      routes: [{ name: target }],
+    });
+  }, [user, userRole, navigation]);
 
   const handleGoBack = () => {
     if (navigation.canGoBack()) {

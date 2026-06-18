@@ -68,6 +68,8 @@ Use these colors for consistency:
 
 ## 📝 Notes
 
-- For now, placeholder files have been created
-- Replace them with actual branded assets ASAP
-- You can copy logo from Next.js project: `../pakplay-next/src/assets/pp logo.png`
+- `icon.png` — full icon with white background `#FFFFFF` (Play Store / iOS)
+- `adaptive-icon.png` — logo only on **transparent** background; Android uses `backgroundColor: #FFFFFF` from `app.json`
+- Logo is scaled to **52%** of canvas (Android adaptive safe zone) so it is not clipped on squircle/circle masks
+- Do not use the same file for both — Android squircle mask crops square icons badly
+- Do not chroma-key or recolor logos when resizing; upscale from the originals in git

@@ -1,8 +1,8 @@
-import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, useContext, useRef, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
 import { Tables } from '../types/supabase';
-import { fetchUserProfile, updateProfile } from '../services/actions';
+import { fetchUserProfile } from '../services/actions';
 
 type Profile = Tables<'profiles'>;
 
@@ -20,29 +20,45 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const AUTH_INIT_TIMEOUT_MS = 6000;
+
+function roleFromUser(user: User | null): string | null {
+  if (!user) return null;
+  const metaRole = user.user_metadata?.role;
+  if (metaRole === 'venue_owner' || metaRole === 'player') {
+    return metaRole;
+  }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const authReadyRef = useRef(false);
+
+  const setAuthReady = () => {
+    authReadyRef.current = true;
+    setLoading(false);
+  };
 
   const fetchProfile = async (userId: string): Promise<string> => {
     try {
-      // Use centralized action instead of inline fetching
       const { data, error } = await fetchUserProfile(userId);
 
       if (error) {
         console.error('[AuthContext] Profile fetch error:', error);
-        return 'player'; // Return default role
+        return 'player';
       }
-      
+
       if (data) {
-        setProfile(data as any);
+        setProfile(data as Profile);
         setUserRole(data.role);
         return data.role;
       }
-      
+
       return 'player';
     } catch (error) {
       console.error('[AuthContext] Error fetching profile:', error);
@@ -56,61 +72,92 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  useEffect(() => {
-    // Get initial session
-    const initAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        // Wait for profile to load before showing app
-        if (session?.user) {
-          const role = await fetchProfile(session.user.id);
-          console.log('[AuthContext] Initial role loaded:', role);
-        }
-      } catch (error) {
-        console.error('[AuthContext] Init auth error:', error);
-      } finally {
-        // Set loading to false after profile is loaded
-        setLoading(false);
+  const loadProfileDeferred = (userId: string) => {
+    // Never call Supabase from inside onAuthStateChange — it can deadlock session restore.
+    setTimeout(() => {
+      void fetchProfile(userId);
+    }, 0);
+  };
+
+  const applySession = (nextSession: Session | null) => {
+    setSession(nextSession);
+    const nextUser = nextSession?.user ?? null;
+    setUser(nextUser);
+
+    if (nextUser) {
+      const fallbackRole = roleFromUser(nextUser);
+      if (fallbackRole) {
+        setUserRole(fallbackRole);
       }
+      loadProfileDeferred(nextUser.id);
+    } else {
+      setProfile(null);
+      setUserRole(null);
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    authReadyRef.current = false;
+    setLoading(true);
+
+    const finishAuthInit = (timedOut = false) => {
+      if (!mounted) return;
+      if (timedOut && !authReadyRef.current) {
+        console.warn('[AuthContext] Auth init timeout — unblocking app');
+      }
+      setAuthReady();
     };
 
-    initAuth();
+    const safetyTimer = setTimeout(() => finishAuthInit(true), AUTH_INIT_TIMEOUT_MS);
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[AuthContext] Auth state change:', event, 'User:', session?.user?.id);
-      
-      // Set loading true for SIGN_IN events to prevent premature navigation
-      if (event === 'SIGNED_IN') {
-        console.log('[AuthContext] Sign in detected - setting loading=true');
-        setLoading(true);
-      }
-      
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      // Wait for profile to load before navigation
-      if (session?.user) {
-        console.log('[AuthContext] Fetching profile for user:', session.user.id);
-        const role = await fetchProfile(session.user.id);
-        console.log('[AuthContext] Role loaded:', role);
-        
-        // Set loading false AFTER profile is fetched
-        if (event === 'SIGNED_IN') {
-          setLoading(false);
-          console.log('[AuthContext] Loading complete - navigation ready');
-        }
-      } else {
-        setProfile(null);
-        setUserRole(null);
-        setLoading(false);
+    const clearSafetyTimer = () => clearTimeout(safetyTimer);
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!mounted) return;
+
+      console.log('[AuthContext] Auth event:', event);
+
+      applySession(nextSession);
+
+      if (
+        event === 'INITIAL_SESSION' ||
+        event === 'SIGNED_IN' ||
+        event === 'SIGNED_OUT' ||
+        event === 'TOKEN_REFRESHED' ||
+        event === 'USER_UPDATED'
+      ) {
+        clearSafetyTimer();
+        finishAuthInit(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Fallback if INITIAL_SESSION is delayed (must run outside the auth callback).
+    setTimeout(() => {
+      if (!mounted || authReadyRef.current) return;
+
+      supabase.auth
+        .getSession()
+        .then(({ data: { session: storedSession } }) => {
+          if (!mounted || authReadyRef.current) return;
+          if (storedSession) {
+            applySession(storedSession);
+          }
+          clearSafetyTimer();
+          finishAuthInit(false);
+        })
+        .catch(() => {
+          if (!mounted || authReadyRef.current) return;
+          clearSafetyTimer();
+          finishAuthInit(false);
+        });
+    }, 0);
+
+    return () => {
+      mounted = false;
+      clearSafetyTimer();
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -119,12 +166,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
     });
 
+    if (!error && data.session) {
+      applySession(data.session);
+      setAuthReady();
+    }
+
     return { error };
   };
 
   const signUp = async (email: string, password: string, fullName: string, phone: string, role: 'player' | 'venue_owner' = 'player') => {
     console.log('[AuthContext] Signing up with role:', role);
-    
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -132,18 +184,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         data: {
           full_name: fullName,
           phone: phone,
-          role: role, // Pass role in metadata
-        }
-      }
+          role: role,
+        },
+      },
     });
 
     if (!error && data.user) {
       console.log('[AuthContext] User created, now setting up profile with role:', role);
-      
-      // Wait a bit for the trigger to create the profile (if it exists)
+
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Upsert the profile to ensure role is set correctly
+
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .upsert({
@@ -153,11 +203,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           whatsapp_number: phone,
           role: role,
         }, {
-          onConflict: 'id'
+          onConflict: 'id',
         })
         .select()
         .single();
-      
+
       if (profileError) {
         console.error('[AuthContext] Profile upsert error:', profileError);
       } else {

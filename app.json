@@ -8,22 +8,26 @@
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1E3A8A"
+      "resizeMode": "cover",
+      "backgroundColor": "#0E2A7A"
     },
     "assetBundlePatterns": [
-      "**/*"
+      "assets/**/*"
     ],
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "co.pakplay.mobile"
+      "supportsTablet": false,
+      "bundleIdentifier": "co.pakplay.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FF6B35"
+        "backgroundColor": "#FFFFFF"
       },
       "package": "co.pakplay.mobile",
+      "versionCode": 8,
       "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
@@ -34,7 +38,24 @@
       "expo-font",
       "@react-native-community/datetimepicker",
       "expo-asset",
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "reactNativeArchitectures": [
+              "armeabi-v7a",
+              "arm64-v8a"
+            ]
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3bfcb59f-757d-4794-9678-39525be4e59e"
+      }
+    },
+    "owner": "binary-wiz"
   }
 }

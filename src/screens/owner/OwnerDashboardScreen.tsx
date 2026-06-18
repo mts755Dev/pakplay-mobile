@@ -16,7 +16,7 @@ import Card from '../../components/Card';
 import Button from '../../components/Button';
 import { COLORS, FONT_SIZES, FONT_WEIGHTS, SPACING } from '../../constants/theme';
 import { fetchOwnerDashboard, fetchOwnerBookings, autoUpdateBookingStatuses } from '../../services/actions';
-import { isPast, parseISO } from 'date-fns';
+import { isPast, parseISODateTime } from '../../utils/date';
 
 interface DashboardStats {
   totalVenues: number;
@@ -98,7 +98,7 @@ export default function OwnerDashboardScreen() {
   // Check if a booking start time has passed
   const isBookingStartTimePassed = (bookingDate: string, startTime: string): boolean => {
     try {
-      const bookingDateTime = parseISO(`${bookingDate}T${startTime}`);
+      const bookingDateTime = parseISODateTime(bookingDate, startTime);
       return isPast(bookingDateTime);
     } catch (error) {
       return false;
@@ -108,7 +108,7 @@ export default function OwnerDashboardScreen() {
   // Check if a booking end time has passed
   const isBookingEndTimePassed = (bookingDate: string, endTime: string): boolean => {
     try {
-      const bookingDateTime = parseISO(`${bookingDate}T${endTime}`);
+      const bookingDateTime = parseISODateTime(bookingDate, endTime);
       return isPast(bookingDateTime);
     } catch (error) {
       return false;
